@@ -1,0 +1,150 @@
+"""Reporter: deterministic, transparent verdict scoring + Markdown render.
+Scoring is heuristic and evidence-gated; real calibration arrives at M6."""
+from __future__ import annotations
+from .contracts import AnalysisState, Finding, Verdict
+from .tools import _HIGH_SIGNAL_NAMESPACES
+from .yara_gen import generate_yara_rules
+
+_SEV_W = {"info": 0.0, "low": 1.0, "medium": 2.5, "high": 4.0, "critical": 6.0}
+
+# A pile of matches within just one or two capa namespace categories
+# shouldn't alone convict a sample -- those categories can themselves be
+# individually false-positive-prone (e.g. anti-debugging checks are also
+# used by legitimate DRM/licensing code). Verified live: notepad.exe, a
+# stock benign Windows binary, hit exactly 2 distinct high-signal categories
+# (anti-analysis, collection) and scored MALICIOUS at 0.9 confidence before
+# this gate existed. Requiring corroboration across >=3 distinct categories
+# is a heuristic improvement grounded in real namespace data, not validated
+# calibration (that needs labeled malware/benign data -- M6).
+_MIN_HIGH_SIGNAL_CATEGORIES = 3
+
+
+def _high_signal_categories(state: AnalysisState, grounded: list[Finding]) -> set[str]:
+    """Distinct capa namespace categories backing this sample's medium+
+    findings. Trusts CapaTool's own severity decision rather than
+    re-deriving namespace membership independently -- CapaTool can demote a
+    rule within an otherwise-high-signal namespace (e.g. load-code/pe's
+    benign structural rules), and re-deriving membership here from the
+    locator alone would silently ignore that demotion."""
+    ev_by_id = {e.evidence_id: e for e in state.evidence}
+    categories: set[str] = set()
+    for f in grounded:
+        if f.severity not in ("medium", "high", "critical"):
+            continue
+        for eid in f.evidence:
+            ev = ev_by_id.get(eid)
+            if not ev or not ev.locator.startswith("capa:"):
+                continue
+            _, ns, _ = ev.locator.split(":", 2)
+            if ns in _HIGH_SIGNAL_NAMESPACES:
+                categories.add(ns)
+    return categories
+
+
+def build_verdict(state: AnalysisState) -> Verdict:
+    grounded = [f for f in state.findings if f.grounded]
+    techniques = sorted({t for f in state.findings for t in f.attack_techniques})
+    unresolved = [u for sr in state.stage_results for u in sr.unresolved]
+
+    # Known-good hash match short-circuits everything else: a cryptographic
+    # match to a trusted reference is evidence about this exact file, not a
+    # heuristic inference from its capabilities, and shouldn't be out-voted
+    # by weaker (and individually false-positive-prone) capability findings.
+    known_good = next((f for f in grounded if f.category == "verdict_factor"), None)
+    if known_good is not None:
+        return Verdict(
+            sample_sha256=state.sample.sha256, verdict="benign",
+            confidence=round(known_good.confidence, 2),
+            attack_techniques=techniques, iocs=state.iocs,
+            yara_rules=generate_yara_rules(state),
+            key_findings=[known_good.finding_id],
+            unresolved=unresolved, evidence_complete=True)
+
+    score = sum(_SEV_W[f.severity] * f.confidence for f in grounded)
+    categories = _high_signal_categories(state, grounded)
+    corroborated = len(categories) >= _MIN_HIGH_SIGNAL_CATEGORIES
+
+    # coverage: did the deep stages actually run?
+    deep_ran = any(sr.stage in ("static", "dynamic") and sr.status == "ok"
+                   for sr in state.stage_results)
+
+    if score >= 6 and corroborated:
+        verdict, conf = "malicious", min(0.9, 0.5 + score / 20)
+    elif score >= 2.5 and corroborated:
+        verdict, conf = "suspicious", 0.5
+    elif categories:
+        # some attacker-relevant signal, but not enough distinct corroboration
+        # to convict -- don't guess either way, per the project's own
+        # "report where you succeed and fail, don't bluff" principle.
+        verdict, conf = "undetermined", 0.35
+    elif grounded and deep_ran:
+        verdict, conf = "benign", 0.55
+    else:
+        # not enough evidence/coverage to assert benign -> honest fallback
+        verdict, conf = "undetermined", 0.3
+
+    evidence_complete = bool(grounded) and deep_ran
+
+    return Verdict(
+        sample_sha256=state.sample.sha256, verdict=verdict, confidence=round(conf, 2),
+        attack_techniques=techniques, iocs=state.iocs,
+        yara_rules=generate_yara_rules(state),
+        key_findings=[f.finding_id for f in grounded][:25],
+        unresolved=unresolved, evidence_complete=evidence_complete)
+
+
+def render_markdown(state: AnalysisState, v: Verdict) -> str:
+    L = []
+    L.append(f"# MAL-AGENT report — `{v.sample_sha256[:16]}…`")
+    L.append("")
+    L.append(f"**Verdict:** {v.verdict.upper()}  |  **Confidence:** {v.confidence}  "
+             f"|  **Evidence complete:** {v.evidence_complete}")
+    prov = state.sample.provenance
+    L.append(f"**Sample:** {state.sample.file_type}, {state.sample.size} bytes  "
+             f"|  **Source:** {prov.source}"
+             + (f" (ticket {prov.ticket_id})" if prov.ticket_id else ""))
+    if v.attack_techniques:
+        L.append(f"**ATT&CK:** {', '.join(v.attack_techniques)}")
+    L.append("")
+    L.append("## Grounded findings")
+    grounded = [f for f in state.findings if f.grounded]
+    if grounded:
+        for f in grounded:
+            L.append(f"- [{f.severity}] {f.claim}  _(conf {f.confidence}, {len(f.evidence)} evidence)_")
+    else:
+        L.append("- _None grounded._")
+    ung = [f for f in state.findings if not f.grounded]
+    if ung:
+        L.append("")
+        L.append("## Model-derived (ungrounded — lower trust)")
+        for f in ung:
+            L.append(f"- {f.claim[:400]}")
+    if v.iocs:
+        L.append("")
+        L.append("## IOCs")
+        for i in v.iocs[:40]:
+            L.append(f"- {i.type}: `{i.value}`")
+    if v.yara_rules:
+        L.append("")
+        L.append("## Generated YARA rules")
+        L.append("_Deterministic, from grounded literal evidence only (M4 baseline; no RAG yet)._")
+        for rule in v.yara_rules:
+            L.append("```yara")
+            L.append(rule)
+            L.append("```")
+    L.append("")
+    L.append("## What this analysis could NOT determine")
+    if v.unresolved:
+        for u in v.unresolved:
+            L.append(f"- {u}")
+    else:
+        L.append("- _Nothing flagged as unresolved._")
+    L.append("")
+    L.append("## Stage trace")
+    for sr in state.stage_results:
+        L.append(f"- **{sr.stage}** — {sr.status}" + (f" — {sr.notes}" if sr.notes else ""))
+    L.append("")
+    L.append(f"_Model calls: {len(state.model_calls)} "
+             f"(cloud: {sum(1 for m in state.model_calls if m.location=='cloud')}). "
+             f"Scoring is heuristic pending calibration._")
+    return "\n".join(L)

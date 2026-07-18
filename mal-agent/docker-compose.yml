@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: malagent
+      POSTGRES_PASSWORD: malagent
+      POSTGRES_DB: malagent
+    # Host port 5433, not 5432: on a dev machine that already runs another
+    # project's Postgres on 5432, `docker compose up` would start this
+    # container but silently fail to bind the port (Docker doesn't error,
+    # it just leaves the container's port unpublished) -- DATABASE_URL
+    # pointing at localhost:5432 would then talk to the OTHER project's
+    # database. Confirmed live on this machine. 5433 avoids the collision.
+    ports: ["5433:5432"]
+    volumes: ["mal_pgdata:/var/lib/postgresql/data"]
+volumes:
+  mal_pgdata:

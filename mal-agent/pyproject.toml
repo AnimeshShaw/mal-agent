@@ -1,0 +1,35 @@
+[project]
+name = "mal-agent"
+version = "0.0.1"
+description = "Agentic static malware-analysis tool (hybrid local/cloud, evidence-grounded)"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+full = [
+  "pefile>=2023.2.7",
+  "sqlalchemy>=2.0",
+  "psycopg2-binary>=2.9",
+  "langgraph>=0.2",
+  "requests>=2.31",
+]
+providers = [
+  "openai>=1.0",
+  "anthropic>=0.34",
+  "google-generativeai>=0.7",
+]
+ghidra = [
+  # Drives Ghidra's Java API in-process (M2). Also needs a Ghidra install
+  # itself (GHIDRA_HOME) and, for capa-ranked function selection, capa's
+  # rules/sigs -- see README "Turn on more" and .env.example.
+  "pyghidra>=3.0",
+]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+mal-agent = "malagent.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["malagent*"]

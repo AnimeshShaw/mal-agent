@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+quarantine/
+out/
+.env
+*.egg-info/
+.pytest_cache/
