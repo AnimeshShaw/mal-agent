@@ -41,3 +41,30 @@ def test_runs_static_and_dynamic_normally_without_a_match(monkeypatch, tmp_path)
     # skip/partial, not the orchestrator's known-good short-circuit note)
     assert static_results
     assert not any("known-good" in (sr.notes or "") for sr in static_results)
+
+
+def test_pipeline_order_places_behavioral_analyst_and_verifier_critic_correctly(monkeypatch, tmp_path):
+    """behavioral_analyst runs after ttp; verify runs after behavioral_analyst
+    (so it grounds the narrative too); verifier_critic runs last (after
+    verify, not before -- otherwise verify's unconditional grounded=True
+    for any finding with evidence would clobber verifier_critic's
+    downgrade decision)."""
+    monkeypatch.delenv("KNOWN_GOOD_HASHES_PATH", raising=False)
+    state = run_linear(_state(tmp_path, "a" * 64))
+    order = [sr.stage for sr in state.stage_results]
+    assert order.index("ttp") < order.index("behavioral_analyst")
+    assert order.index("behavioral_analyst") < order.index("verify")
+    assert order.index("verify") < order.index("verifier_critic")
+
+
+def test_skips_behavioral_analyst_and_verifier_critic_on_known_good_match(monkeypatch, tmp_path):
+    hashes_file = tmp_path / "hashes.txt"
+    hashes_file.write_text("a" * 64 + "\n")
+    monkeypatch.setenv("KNOWN_GOOD_HASHES_PATH", str(hashes_file))
+    state = run_linear(_state(tmp_path, "a" * 64))
+    ba_results = [sr for sr in state.stage_results if sr.stage == "behavioral_analyst"]
+    vc_results = [sr for sr in state.stage_results if sr.stage == "verifier_critic"]
+    assert len(ba_results) == 1 and ba_results[0].status == "skipped"
+    assert "known-good" in (ba_results[0].notes or "").lower()
+    assert len(vc_results) == 1 and vc_results[0].status == "skipped"
+    assert "known-good" in (vc_results[0].notes or "").lower()

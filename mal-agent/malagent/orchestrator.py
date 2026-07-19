@@ -3,17 +3,19 @@ runner with identical semantics. Either way agents stay pure (D8), so the
 substrate is swappable. Budget + audit are enforced here."""
 from __future__ import annotations
 from typing import Callable, Optional
-from .agents import (dynamic_agent, make_static_agent, triage_agent, ttp_agent,
-                    verifier_agent)
+from .agents import (dynamic_agent, make_behavioral_analyst, make_static_agent,
+                    make_verifier_critic, triage_agent, ttp_agent, verifier_agent)
 from .contracts import AnalysisState, StageResult
 from .knowngood import is_known_good_match
 from .models import ModelRouter
 
 # Stages skipped outright on a known-good hash match: they're the expensive
-# ones (Ghidra decompilation + LLM calls; sandbox detonation). triage (already
-# ran, that's how we know), ttp, and verify stay cheap and still run so the
-# report and grounding stay coherent.
-_SKIP_ON_KNOWN_GOOD = {"static", "dynamic"}
+# ones (Ghidra decompilation + LLM calls; sandbox detonation; the LLM
+# reasoning layer that has nothing meaningful to synthesize once the
+# verdict is already decided). triage (already ran, that's how we know),
+# ttp, and verify stay cheap and still run so the report and grounding
+# stay coherent.
+_SKIP_ON_KNOWN_GOOD = {"static", "dynamic", "behavioral_analyst", "verifier_critic"}
 
 
 def build_pipeline(router: Optional[ModelRouter] = None) -> list[tuple[str, Callable]]:
@@ -22,7 +24,9 @@ def build_pipeline(router: Optional[ModelRouter] = None) -> list[tuple[str, Call
         ("static", make_static_agent(router)),
         ("dynamic", dynamic_agent),
         ("ttp", ttp_agent),
+        ("behavioral_analyst", make_behavioral_analyst(router)),
         ("verify", verifier_agent),
+        ("verifier_critic", make_verifier_critic(router)),
     ]
 
 
