@@ -187,6 +187,69 @@ def make_behavioral_analyst(router: Optional[ModelRouter] = None):
     return behavioral_analyst
 
 
+def make_verifier_critic(router: Optional[ModelRouter] = None):
+    """The architecture doc's originally-named Verifier/Critic role (Agent
+    Role 6, MalAgentArchitecture.md S4): fact-checks the behavioral_analyst
+    narrative against the evidence it cites. Distinct from verifier_agent's
+    evidence-*linkage* check (does it have an evidence ID at all, no
+    semantics). Must run after verifier_agent in the pipeline so its
+    downgrade decision isn't clobbered by the deterministic grounding pass
+    (verifier_agent unconditionally sets grounded=True for any finding with
+    non-empty evidence, which the narrative always has)."""
+    def verifier_critic(state: AnalysisState) -> AnalysisState:
+        narrative = next((f for f in state.findings
+                          if f.source_stage == "behavioral_analyst"), None)
+        if narrative is None:
+            state.stage_results.append(StageResult(
+                stage="verifier_critic", status="skipped",
+                unresolved=["No behavioral narrative to verify (behavioral_analyst did not "
+                            "produce one)."]))
+            return state
+
+        if router is None:
+            narrative.grounded = False
+            state.stage_results.append(StageResult(
+                stage="verifier_critic", status="skipped",
+                unresolved=["No model configured: the behavioral narrative could not be "
+                            "independently verified against its evidence and is treated as "
+                            "ungrounded, not silently trusted."]))
+            return state
+
+        ev_by_id = {e.evidence_id: e for e in state.evidence}
+        cited = [ev_by_id[eid] for eid in narrative.evidence if eid in ev_by_id]
+        evidence_text = "\n".join(f"- ({ev.locator}) {ev.excerpt}" for ev in cited if ev.excerpt)
+
+        trigger = determine_escalation_trigger(state)
+        escalate = trigger is not None and trigger in state.policy.escalation_triggers
+
+        prompt = f"NARRATIVE:\n{narrative.claim}\n\nEVIDENCE IT CITES:\n{evidence_text}"
+        resp = router.analyze(
+            system=("You are a fact-checker reviewing a malware analyst's narrative against "
+                    "the raw evidence it claims to be based on. Does every claim in the "
+                    "narrative have real support in the evidence? Answer with exactly one "
+                    "line: either 'SUPPORTED' or 'UNSUPPORTED: <reason>'."),
+            untrusted_label="narrative_and_evidence", untrusted_text=prompt,
+            escalate=escalate, artifact_class="derived")
+        if resp is None:
+            narrative.grounded = False
+            state.stage_results.append(StageResult(
+                stage="verifier_critic", status="partial",
+                unresolved=["The behavioral narrative could not be independently verified "
+                            "(local model down and cloud egress blocked by policy) and is "
+                            "treated as ungrounded, not silently trusted."]))
+            return state
+
+        verdict_line = resp.text.strip()
+        sr = StageResult(stage="verifier_critic", status="ok",
+                         notes=f"fact-check via {resp.provider}/{resp.location}: {verdict_line[:200]}")
+        if not verdict_line.upper().startswith("SUPPORTED"):
+            narrative.grounded = False
+            sr.unresolved.append(f"Behavioral narrative failed independent fact-checking: {verdict_line}")
+        state.stage_results.append(sr)
+        return state
+    return verifier_critic
+
+
 def dynamic_agent(state: AnalysisState) -> AnalysisState:
     """STUB (static-only v1). Contract present so CAPE/Cuckoo slots in later."""
     _merge(state, StageResult(
