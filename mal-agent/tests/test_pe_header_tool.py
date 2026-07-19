@@ -152,3 +152,78 @@ def test_small_padding_not_flagged_as_overlay(monkeypatch):
     state = _state_with_size(0x400 + 0x200 + 8)  # 8 bytes: normal alignment padding
     sr = PEHeaderTool().run(state)
     assert not any("overlay" in f.claim.lower() for f in sr.findings)
+
+
+class _FakePEWithRichHeader:
+    """Mirrors real pefile behavior with fast_load=True (what PEHeaderTool
+    actually uses): the `.RICH_HEADER` attribute is only populated by
+    full_load. `parse_rich_header()` is the standalone method that works
+    under fast_load and returns a dict -- confirmed live against real
+    notepad.exe/python.exe, where accessing `.RICH_HEADER` directly under
+    fast_load=True raises AttributeError."""
+    def __init__(self, path, fast_load=True):
+        self.sections = []
+
+    def parse_data_directories(self):
+        pass
+
+    def get_imphash(self):
+        return None
+
+    def parse_rich_header(self):
+        return {"checksum": 0xDEADBEEF, "key": b"x", "raw_data": b"y", "values": [1, 2]}
+
+
+def test_rich_header_checksum_recorded_as_evidence(monkeypatch):
+    monkeypatch.setattr(pefile, "PE", _FakePEWithRichHeader)
+    sr = PEHeaderTool().run(_state())
+    rich_ev = [e for e in sr.evidence if e.locator == "rich_header:checksum"]
+    assert len(rich_ev) == 1
+    assert rich_ev[0].excerpt == hex(0xDEADBEEF)
+
+
+class _FakePENoRichHeader:
+    """No Rich header present: parse_rich_header() returns None, matching
+    real pefile's behavior for a binary that genuinely lacks one (or
+    raises, e.g. for non-PE-compatible inputs -- both degrade gracefully)."""
+    def __init__(self, path, fast_load=True):
+        self.sections = []
+
+    def parse_data_directories(self):
+        pass
+
+    def get_imphash(self):
+        return None
+
+    def parse_rich_header(self):
+        return None
+
+
+def test_missing_rich_header_does_not_error_or_add_evidence(monkeypatch):
+    monkeypatch.setattr(pefile, "PE", _FakePENoRichHeader)
+    sr = PEHeaderTool().run(_state())
+    assert sr.status == "ok"
+    assert [e for e in sr.evidence if e.locator == "rich_header:checksum"] == []
+
+
+class _FakePERichHeaderRaises:
+    """parse_rich_header() can itself raise on malformed input -- degrade
+    gracefully, same as every other optional pefile feature in this tool."""
+    def __init__(self, path, fast_load=True):
+        self.sections = []
+
+    def parse_data_directories(self):
+        pass
+
+    def get_imphash(self):
+        return None
+
+    def parse_rich_header(self):
+        raise Exception("malformed rich header")
+
+
+def test_rich_header_parse_failure_degrades_gracefully(monkeypatch):
+    monkeypatch.setattr(pefile, "PE", _FakePERichHeaderRaises)
+    sr = PEHeaderTool().run(_state())
+    assert sr.status == "ok"
+    assert [e for e in sr.evidence if e.locator == "rich_header:checksum"] == []

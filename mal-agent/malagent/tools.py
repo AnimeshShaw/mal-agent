@@ -249,6 +249,29 @@ class PEHeaderTool:
                     category="capability", severity="medium", confidence=0.55,
                     evidence=[ov_ev.evidence_id], source_stage="triage"))
 
+        # Rich header: an undocumented but well-known Microsoft linker
+        # artifact encoding compiler/toolchain versions -- a standard
+        # attribution/clustering correlation key. Evidence only, no
+        # standalone Finding: presence/checksum alone isn't a suspicious
+        # signal, same treatment as imphash above.
+        #
+        # NOTE: pe.RICH_HEADER (attribute access) is only populated by
+        # full_load -- under fast_load=True (what this tool uses),
+        # accessing it directly raises AttributeError. Confirmed live
+        # against real notepad.exe/python.exe. parse_rich_header() is the
+        # standalone method that works under fast_load and returns the
+        # same data as a dict.
+        try:
+            rich = pe.parse_rich_header()
+        except Exception:
+            rich = None
+        checksum = rich.get("checksum") if rich else None
+        if checksum is not None:
+            rich_ev = EvidenceRecord(evidence_id=_id("ev", input_ref, "richheader"),
+                                     artifact_id=art.artifact_id, locator="rich_header:checksum",
+                                     excerpt=hex(checksum), trust="tool")
+            evidence.append(rich_ev)
+
         return StageResult(stage="triage", status="ok", findings=findings,
                            artifacts=[art], evidence=evidence, iocs=iocs,
                            notes=f"imports={len(imports)}, risky={len(findings)}"
