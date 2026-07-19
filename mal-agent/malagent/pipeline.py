@@ -7,7 +7,7 @@ from .contracts import AnalysisState, EgressPolicy, Provenance, StepBudget, Verd
 from .ingest import ingest, new_run_id
 from .models import ModelRouter, build_provider
 from .orchestrator import run as run_pipeline
-from .reporter import build_verdict, render_markdown
+from .reporter import build_verdict, render_markdown, render_txt, write_narrative
 from .store import get_repository
 
 
@@ -44,4 +44,6 @@ def analyze(path: str, *, provenance: Optional[Provenance] = None,
     audit.log("verdict", verdict=verdict.verdict, confidence=verdict.confidence)
     repo.save_run(state, verdict)
     report_md = render_markdown(state, verdict)
-    return state, verdict, report_md, audit
+    narrative = write_narrative(state, verdict, router=router)
+    report_txt = render_txt(state, verdict, audit, narrative)
+    return state, verdict, report_md, report_txt, audit

@@ -22,7 +22,7 @@ def _make_fake_pe(tmp: Path) -> str:
 
 def test_end_to_end(tmp_path):
     path = _make_fake_pe(tmp_path)
-    state, verdict, report_md, audit = analyze(
+    state, verdict, report_md, report_txt, audit = analyze(
         path, provenance=Provenance(source="dataset", ticket_id="TEST-1"),
         enable_models=False)
 
@@ -41,3 +41,7 @@ def test_end_to_end(tmp_path):
     # M4: grounded suspicious-string evidence synthesizes a YARA rule, surfaced in the report
     assert verdict.yara_rules
     assert "YARA" in report_md
+    # M0: the mandatory txt report is always produced, unabridged
+    assert "MAL-AGENT DETAILED ANALYSIS REPORT" in report_txt
+    assert "APPENDIX A" in report_txt
+    assert "END OF REPORT" in report_txt
