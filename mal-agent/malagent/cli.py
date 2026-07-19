@@ -1,7 +1,6 @@
 """CLI entry point."""
 from __future__ import annotations
 import argparse
-import json
 import sys
 from pathlib import Path
 from .contracts import EgressPolicy, Provenance
@@ -19,7 +18,10 @@ def main(argv=None):
     p.add_argument("--allow-pseudocode-egress", action="store_true")
     p.add_argument("--escalation-provider", default="anthropic",
                    choices=["openai", "anthropic", "gemini", "xai"])
-    p.add_argument("--out", default=None, help="dir to write report.md + verdict.json")
+    p.add_argument("--out", default="./mal-agent-reports",
+                   help="dir to write report.md + verdict.json + the mandatory report.txt "
+                        "(default: ./mal-agent-reports; always written, files are namespaced "
+                        "by sample hash)")
     args = p.parse_args(argv)
 
     if not Path(args.path).exists():
@@ -30,18 +32,20 @@ def main(argv=None):
                           allow_pseudocode_egress=args.allow_pseudocode_egress)
     prov = Provenance(source=args.source, ticket_id=args.ticket)
 
-    state, verdict, report_md, audit = analyze(
+    state, verdict, report_md, report_txt, audit = analyze(
         args.path, provenance=prov, policy=policy, enable_models=args.enable_models,
         escalation_provider=args.escalation_provider)
 
     print(report_md)
     print(f"\n[audit] chain intact: {audit.verify()}  records: {len(audit.records)}")
 
-    if args.out:
-        out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
-        (out / "report.md").write_text(report_md)
-        (out / "verdict.json").write_text(verdict.model_dump_json(indent=2))
-        print(f"[out] wrote {out}/report.md and verdict.json")
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    prefix = state.sample.sha256[:16]
+    (out / f"{prefix}_report.md").write_text(report_md)
+    (out / f"{prefix}_verdict.json").write_text(verdict.model_dump_json(indent=2))
+    (out / f"{prefix}_report.txt").write_text(report_txt)
+    print(f"[out] wrote {out}/{prefix}_report.md, {prefix}_verdict.json, {prefix}_report.txt")
     return 0
 
 
