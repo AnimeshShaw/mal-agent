@@ -1,7 +1,9 @@
 """Reporter: deterministic, transparent verdict scoring + Markdown render.
 Scoring is heuristic and evidence-gated; real calibration arrives at M6."""
 from __future__ import annotations
+from typing import Optional
 from .contracts import AnalysisState, Finding, Verdict
+from .models import ModelRouter
 from .tools import _HIGH_SIGNAL_NAMESPACES
 from .yara_gen import generate_yara_rules
 
@@ -91,6 +93,88 @@ def build_verdict(state: AnalysisState) -> Verdict:
         yara_rules=generate_yara_rules(state),
         key_findings=[f.finding_id for f in grounded][:25],
         unresolved=unresolved, evidence_complete=evidence_complete)
+
+
+# ---- narrative prose for the mandatory .txt report (M4.6) ----
+# Recommendations must exist even with no model configured at all, so this is
+# a plain lookup keyed on the deterministic verdict, not model output.
+_RECOMMENDATIONS_BY_VERDICT = {
+    "malicious": "Contain and escalate immediately: isolate the affected host, block "
+                 "associated indicators at the network boundary, and hand off to incident "
+                 "response.",
+    "suspicious": "Escalate for manual analyst review before taking action; evidence is "
+                  "consistent with malicious behavior but not corroborated enough to convict "
+                  "automatically.",
+    "benign": "No action required; continue routine monitoring.",
+    "undetermined": "Escalate for manual analyst review; automated evidence was insufficient "
+                    "to reach a confident verdict either way.",
+}
+
+
+def _templated_recommendations(v: Verdict) -> str:
+    return _RECOMMENDATIONS_BY_VERDICT.get(v.verdict, _RECOMMENDATIONS_BY_VERDICT["undetermined"])
+
+
+def _templated_summary(state: AnalysisState, v: Verdict) -> str:
+    findings_note = (f"{len(v.key_findings)} grounded finding(s) contributed to this verdict."
+                     if v.key_findings else "No grounded findings contributed to this verdict.")
+    return (f"No narrative model was available for this analysis; this summary is generated "
+            f"directly from the deterministic verdict record. Verdict: {v.verdict.upper()} "
+            f"(confidence {v.confidence}). {findings_note}")
+
+
+def _split_narrative_response(text: str, v: Verdict) -> tuple[str, str]:
+    """A well-formed model response has both section markers, summary before
+    recommendations. Anything else (a model that ignored the requested
+    format) degrades to the whole response as the summary plus a templated
+    recommendation -- never drop the response outright, and never leave
+    recommendations empty."""
+    m_sum, m_rec = "EXECUTIVE SUMMARY:", "RECOMMENDATIONS:"
+    if m_sum in text and m_rec in text and text.index(m_sum) < text.index(m_rec):
+        summary = text.split(m_sum, 1)[1].split(m_rec, 1)[0].strip()
+        recommendations = text.split(m_rec, 1)[1].strip()
+        return summary, recommendations
+    return text.strip(), _templated_recommendations(v)
+
+
+def write_narrative(state: AnalysisState, v: Verdict,
+                    router: Optional[ModelRouter] = None) -> tuple[str, str]:
+    """Executive Summary + Recommendations prose for the mandatory txt report.
+    Three-tier fallback, each tier strictly weaker than the last:
+    1. behavioral_analyst's narrative, if verifier_critic left it grounded --
+       already fact-checked against the evidence.
+    2. a fresh router call over grounded findings directly, if no verified
+       narrative exists (or the sample has ungrounded/no behavioral narrative).
+    3. fully templated text from the Verdict record, if no router is
+       configured or the model is unavailable. The mandatory report can never
+       have a missing section because a model was down."""
+    narrative = next((f for f in state.findings
+                      if f.source_stage == "behavioral_analyst" and f.grounded), None)
+    if narrative is not None:
+        label, text = "behavioral_narrative", narrative.claim
+    else:
+        grounded = [f for f in state.findings if f.grounded]
+        if grounded:
+            label = "grounded_findings"
+            text = "\n".join(f"- [{f.severity}] {f.claim}" for f in grounded)
+        else:
+            # No grounded data at all -- still give the model a chance to
+            # phrase the bare verdict record; if it degrades, tier 3 catches it.
+            label = "verdict_only"
+            text = (f"Verdict: {v.verdict}, confidence {v.confidence}, "
+                    f"key_findings={v.key_findings}, unresolved={v.unresolved}")
+
+    if router is not None:
+        resp = router.analyze(
+            system=("You are writing the Executive Summary and Recommendations sections of "
+                    "a malware analysis report for a human reviewer. Respond in exactly this "
+                    "format:\nEXECUTIVE SUMMARY:\n<summary>\nRECOMMENDATIONS:\n<recommendations>"),
+            untrusted_label=label, untrusted_text=text,
+            escalate=False, artifact_class="derived")
+        if resp is not None:
+            return _split_narrative_response(resp.text.strip(), v)
+
+    return _templated_summary(state, v), _templated_recommendations(v)
 
 
 def render_markdown(state: AnalysisState, v: Verdict) -> str:
