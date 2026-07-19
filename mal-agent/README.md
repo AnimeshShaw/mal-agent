@@ -51,6 +51,11 @@ implemented, what isn't, and why).
   (host port **5433**, not 5432 -- see the comment in `docker-compose.yml` for
   why). Verified live: `PostgresRepository` connects and a real run's verdict
   round-trips through it correctly.
+- **`mal-agent doctor`:** verifies all of the above are actually
+  configured correctly (not just present) — PASS/WARN/FAIL per check.
+- **One-command setup:** `scripts/install.ps1`/`.sh` (Python-only) or
+  `scripts/install-full.ps1`/`.sh` (also installs Ghidra/JDK/Ollama/
+  Postgres). Full detail on both paths: `docs/SETUP.md`.
 
 ## Build roadmap (from the spec)
 M0 deterministic spine (done) → M1 local model summaries (done: policy-gated
