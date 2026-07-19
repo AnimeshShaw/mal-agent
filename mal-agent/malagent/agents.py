@@ -133,6 +133,60 @@ def make_static_agent(router: Optional[ModelRouter] = None, ghidra: Optional[obj
     return static_agent
 
 
+def make_behavioral_analyst(router: Optional[ModelRouter] = None):
+    """Synthesizes every grounded finding accumulated by the time ttp_agent
+    finishes (triage capabilities, per-function Ghidra summaries, ATT&CK
+    techniques) into one coherent narrative Finding. Its evidence is the
+    sorted union of every finding it drew on -- the same grounding trick
+    ttp_agent already uses -- so it survives verify as genuinely grounded,
+    not a bare LLM claim. severity="info" always: this narrative must never
+    influence reporter.build_verdict()'s deterministic score."""
+    def behavioral_analyst(state: AnalysisState) -> AnalysisState:
+        if router is None:
+            _merge(state, StageResult(
+                stage="behavioral_analyst", status="skipped",
+                unresolved=["No model configured: behavioral synthesis not performed."]))
+            return state
+
+        grounded_so_far = [f for f in state.findings if f.evidence]
+        if not grounded_so_far:
+            _merge(state, StageResult(
+                stage="behavioral_analyst", status="skipped",
+                unresolved=["No grounded findings available to synthesize a behavioral "
+                            "narrative from."]))
+            return state
+
+        trigger = determine_escalation_trigger(state)
+        escalate = trigger is not None and trigger in state.policy.escalation_triggers
+
+        summary = "\n".join(f"- [{f.category}] {f.claim}" for f in grounded_so_far[:50])
+        resp = router.analyze(
+            system=("You are a senior malware analyst. Given this evidence (capabilities, "
+                    "decompiled function summaries, ATT&CK techniques), write a coherent "
+                    "narrative describing what this sample likely does and why. Be explicit "
+                    "about uncertainty; do not claim more than the evidence supports."),
+            untrusted_label="all_findings", untrusted_text=summary,
+            escalate=escalate, artifact_class="derived")
+        if resp is None:
+            _merge(state, StageResult(
+                stage="behavioral_analyst", status="partial",
+                unresolved=["Behavioral synthesis unavailable (local model down and cloud "
+                            "egress blocked by policy)."]))
+            return state
+
+        all_evidence_ids = sorted({eid for f in grounded_so_far for eid in f.evidence})
+        finding = Finding(
+            finding_id=_id("behavioral", state.run_id), claim=resp.text.strip()[:2000],
+            category="behavior", severity="info", confidence=0.5,
+            evidence=all_evidence_ids, source_stage="behavioral_analyst")
+        _merge(state, StageResult(
+            stage="behavioral_analyst", status="ok", findings=[finding],
+            notes=f"synthesized from {len(grounded_so_far)} findings via "
+                  f"{resp.provider}/{resp.location}"))
+        return state
+    return behavioral_analyst
+
+
 def dynamic_agent(state: AnalysisState) -> AnalysisState:
     """STUB (static-only v1). Contract present so CAPE/Cuckoo slots in later."""
     _merge(state, StageResult(
