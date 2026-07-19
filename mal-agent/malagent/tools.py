@@ -67,6 +67,14 @@ def _ascii_strings(data: bytes, minlen: int = 5) -> list[bytes]:
     return re.findall(rb"[\x20-\x7e]{%d,}" % minlen, data)
 
 
+def _wide_strings(data: bytes, minlen: int = 5) -> list[bytes]:
+    """UTF-16LE strings in the ASCII range: printable byte followed by a
+    null byte, repeated. Common in Windows PE string tables and invisible
+    to the plain ASCII extractor above."""
+    matches = re.findall(rb"(?:[\x20-\x7e]\x00){%d,}" % minlen, data)
+    return [m.replace(b"\x00", b"") for m in matches]
+
+
 class StaticFeaturesTool:
     name = "static_features"
 
@@ -107,6 +115,21 @@ class StaticFeaturesTool:
                     category="capability", severity="low", confidence=0.55,
                     evidence=[ev.evidence_id], source_stage="triage"))
 
+        wide_strings = _wide_strings(data)
+        wide_joined = b"\n".join(wide_strings)
+        for marker in _SUSPICIOUS_STR:
+            if marker.lower() in wide_joined.lower():
+                ev = EvidenceRecord(evidence_id=_id("ev", input_ref, "wide", marker.decode("latin1")),
+                                    artifact_id=art.artifact_id,
+                                    locator=f"widestring:{marker.decode('latin1')}",
+                                    excerpt=marker.decode("latin1"), trust="tool")
+                evidence.append(ev)
+                findings.append(Finding(
+                    finding_id=_id("f", input_ref, "wide", marker.decode("latin1")),
+                    claim=f"Suspicious wide (UTF-16) string present: {marker.decode('latin1')}",
+                    category="capability", severity="low", confidence=0.55,
+                    evidence=[ev.evidence_id], source_stage="triage"))
+
         seen = set()
         for kind, rx in _IOC_RX.items():
             for m in rx.findall(data)[:50]:
@@ -122,7 +145,8 @@ class StaticFeaturesTool:
 
         return StageResult(stage="triage", status="ok", findings=findings,
                            artifacts=[art], evidence=evidence, iocs=iocs,
-                           notes=f"entropy={ent:.2f}, strings={len(strings)}, iocs={len(iocs)}")
+                           notes=f"entropy={ent:.2f}, strings={len(strings)}, "
+                                 f"wide_strings={len(wide_strings)}, iocs={len(iocs)}")
 
 
 class PEHeaderTool:
