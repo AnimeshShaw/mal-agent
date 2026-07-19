@@ -177,6 +177,152 @@ def write_narrative(state: AnalysisState, v: Verdict,
     return _templated_summary(state, v), _templated_recommendations(v)
 
 
+def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, str]) -> str:
+    """Mandatory, unabridged detailed report -- written on every run, not
+    gated behind --out. Both a narrative half (write_narrative's prose)
+    and a full raw-data dump for archival/compliance: every finding, every
+    evidence excerpt, the complete audit log, all model calls -- nothing
+    truncated the way report.md's summary view is."""
+    exec_summary, recommendations = narrative
+    bar = "=" * 80
+    thin = "-" * 80
+    L: list[str] = []
+
+    L.append(bar)
+    L.append("MAL-AGENT DETAILED ANALYSIS REPORT")
+    L.append(bar)
+    L.append(f"Run ID:      {state.run_id}")
+    L.append(f"Generated:   {v.generated_at.isoformat()}")
+    L.append(f"Sample:      sha256={state.sample.sha256}")
+    L.append(f"             md5={state.sample.md5}")
+    L.append(f"             type={state.sample.file_type}  size={state.sample.size} bytes")
+    L.append(f"             source={state.sample.provenance.source}"
+             + (f" (ticket {state.sample.provenance.ticket_id})"
+                if state.sample.provenance.ticket_id else ""))
+    L.append("")
+
+    L.append(thin)
+    L.append("SECTION 1: EXECUTIVE SUMMARY")
+    L.append(thin)
+    L.append(exec_summary)
+    L.append("")
+
+    L.append(thin)
+    L.append("SECTION 2: VERDICT")
+    L.append(thin)
+    L.append(f"Verdict:            {v.verdict.upper()}")
+    L.append(f"Confidence:         {v.confidence}")
+    L.append(f"Evidence complete:  {v.evidence_complete}")
+    L.append(f"ATT&CK techniques:  {', '.join(v.attack_techniques) if v.attack_techniques else '(none)'}")
+    L.append(f"Family:             {v.family or '(undetermined)'}")
+    L.append("")
+
+    L.append(thin)
+    L.append("SECTION 3: DETAILED FINDINGS NARRATIVE")
+    L.append(thin)
+    narrative_finding = next(
+        (f for f in state.findings if f.source_stage == "behavioral_analyst" and f.grounded), None)
+    if narrative_finding:
+        L.append(narrative_finding.claim)
+    else:
+        L.append("No independently-verified behavioral narrative is available for this run "
+                 "(see Appendix A for the raw findings this assessment is based on).")
+    L.append("")
+
+    L.append(thin)
+    L.append("SECTION 4: RECOMMENDATIONS")
+    L.append(thin)
+    L.append(recommendations)
+    L.append("")
+
+    grounded = [f for f in state.findings if f.grounded]
+    L.append(thin)
+    L.append(f"APPENDIX A: ALL GROUNDED FINDINGS ({len(grounded)})")
+    L.append(thin)
+    if grounded:
+        for f in grounded:
+            L.append(f"[{f.severity}] ({f.category}, {f.source_stage or 'triage'}, "
+                     f"conf={f.confidence}) {f.claim}")
+            L.append(f"  evidence: {', '.join(f.evidence) if f.evidence else '(none)'}")
+    else:
+        L.append("(none)")
+    L.append("")
+
+    ungrounded = [f for f in state.findings if not f.grounded]
+    L.append(thin)
+    L.append(f"APPENDIX B: UNGROUNDED / MODEL-DERIVED FINDINGS ({len(ungrounded)})")
+    L.append(thin)
+    if ungrounded:
+        for f in ungrounded:
+            L.append(f"[{f.severity}] ({f.category}, {f.source_stage or 'triage'}, "
+                     f"conf={f.confidence}) {f.claim}")
+    else:
+        L.append("(none)")
+    L.append("")
+
+    L.append(thin)
+    L.append(f"APPENDIX C: ALL EVIDENCE RECORDS ({len(state.evidence)})")
+    L.append(thin)
+    for ev in state.evidence:
+        L.append(f"{ev.evidence_id}  locator={ev.locator}  trust={ev.trust}")
+        if ev.excerpt:
+            L.append(f"  excerpt: {ev.excerpt}")
+    L.append("")
+
+    L.append(thin)
+    L.append(f"APPENDIX D: IOCs ({len(v.iocs)})")
+    L.append(thin)
+    if v.iocs:
+        for i in v.iocs:
+            L.append(f"{i.type}: {i.value}")
+    else:
+        L.append("(none)")
+    L.append("")
+
+    L.append(thin)
+    L.append("APPENDIX E: STAGE TRACE")
+    L.append(thin)
+    for sr in state.stage_results:
+        L.append(f"[{sr.stage}] status={sr.status}" + (f"  notes={sr.notes}" if sr.notes else ""))
+        for u in sr.unresolved:
+            L.append(f"  unresolved: {u}")
+    L.append("")
+
+    L.append(thin)
+    L.append(f"APPENDIX F: MODEL CALL LOG ({len(state.model_calls)})")
+    L.append(thin)
+    if state.model_calls:
+        for m in state.model_calls:
+            L.append(f"{m.at.isoformat()}  provider={m.provider}  model={m.model}  "
+                     f"location={m.location}  egress_allowed={m.egress_allowed}  "
+                     f"prompt_hash={m.prompt_hash}")
+    else:
+        L.append("(no model calls made)")
+    L.append("")
+
+    L.append(thin)
+    L.append(f"APPENDIX G: AUDIT LOG (chain intact: {audit.verify()}, {len(audit.records)} records)")
+    L.append(thin)
+    for rec in audit.records:
+        L.append(f"[{rec.seq}] {rec.at.isoformat()}  action={rec.action}  detail={rec.detail}")
+    L.append("")
+
+    L.append(thin)
+    L.append(f"APPENDIX H: GENERATED YARA RULES ({len(v.yara_rules)})")
+    L.append(thin)
+    if v.yara_rules:
+        for rule in v.yara_rules:
+            L.append(rule)
+            L.append("")
+    else:
+        L.append("(none)")
+
+    L.append(bar)
+    L.append("END OF REPORT")
+    L.append(bar)
+    return "\n".join(L)
+
+
 def render_markdown(state: AnalysisState, v: Verdict) -> str:
     L = []
     L.append(f"# MAL-AGENT report — `{v.sample_sha256[:16]}…`")
