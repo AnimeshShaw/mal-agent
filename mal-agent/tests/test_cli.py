@@ -67,3 +67,26 @@ def test_two_different_samples_in_same_default_dir_do_not_overwrite(tmp_path, mo
     default_dir = tmp_path / "mal-agent-reports"
     txt_files = sorted(default_dir.glob("*_report.txt"))
     assert len(txt_files) == 2
+
+
+def test_doctor_subcommand_prints_report(capsys):
+    main(["doctor"])
+    captured = capsys.readouterr()
+    assert "MAL-AGENT DOCTOR" in captured.out
+
+
+def test_doctor_subcommand_returns_valid_exit_code():
+    rc = main(["doctor"])
+    assert rc in (0, 1)
+
+
+def test_normal_analyze_invocation_still_works_unaffected(tmp_path, monkeypatch):
+    """Backward compatibility: 'mal-agent <path>' must not be broken by
+    doctor's addition -- 'doctor' is handled as a special case, not a
+    subparser that could shadow the positional path argument."""
+    monkeypatch.chdir(tmp_path)
+    body = b"MZ" + b"\x00" * 64 + b"benign\n" + b"\x00" * 256
+    p = tmp_path / "sample.bin"
+    p.write_bytes(body)
+    rc = main([str(p), "--source", "dataset"])
+    assert rc == 0

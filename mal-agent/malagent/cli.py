@@ -8,6 +8,13 @@ from .pipeline import analyze
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "doctor":
+        from .doctor import exit_code, format_report, run_checks
+        results = run_checks()
+        print(format_report(results))
+        return exit_code(results)
+
     p = argparse.ArgumentParser(prog="mal-agent", description="Evidence-grounded static malware analysis")
     p.add_argument("path", help="path to the sample")
     p.add_argument("--source", default="manual", choices=["soc", "cdc", "manual", "dataset"])
