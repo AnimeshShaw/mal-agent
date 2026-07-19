@@ -251,6 +251,7 @@ class CapaTool:
         for rule_name, rule in rules.items():
             meta = rule.get("meta", {})
             attack = [a.get("id", "") for a in meta.get("attack", []) if a.get("id")]
+            mbc = sorted({m.get("id", "") for m in meta.get("mbc", []) if m.get("id")})
             namespace = meta.get("namespace", "") or ""
             top_ns = namespace.split("/", 1)[0]
             severity = _capa_severity(rule_name, namespace)
@@ -258,9 +259,12 @@ class CapaTool:
                                 artifact_id=art.artifact_id, locator=f"capa:{top_ns}:{rule_name}",
                                 excerpt=rule_name, trust="tool")
             evidence.append(ev)
+            claim = f"Capability detected: {rule_name}"
+            if mbc:
+                claim += f" (MBC: {', '.join(mbc)})"
             findings.append(Finding(
                 finding_id=_id("f", input_ref, "capa", rule_name),
-                claim=f"Capability detected: {rule_name}",
+                claim=claim,
                 category="capability", severity=severity, confidence=0.7,
                 evidence=[ev.evidence_id], attack_techniques=attack, source_stage="triage"))
         return StageResult(stage="triage", status="ok", findings=findings,

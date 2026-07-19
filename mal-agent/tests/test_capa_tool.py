@@ -158,3 +158,49 @@ def test_load_code_dotnet_powershell_shellcode_stay_high_signal(monkeypatch):
     by_claim = {f.claim: f.severity for f in sr.findings}
     assert by_claim["Capability detected: run PowerShell expression"] == "medium"
     assert by_claim["Capability detected: execute shellcode via Windows fibers"] == "medium"
+
+
+def test_mbc_ids_appended_to_claim_when_present(monkeypatch):
+    rules = {
+        "encrypt data using rc4": {
+            "meta": {
+                "namespace": "data-manipulation/encryption/rc4",
+                "attack": [],
+                "mbc": [
+                    {"id": "C0028.002", "objective": "Data Micro-behavior",
+                     "behavior": "Encrypt Data", "method": "RC4"},
+                ],
+            },
+            "matches": [],
+        }
+    }
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
+    sr = CapaTool().run(_state())
+    assert sr.findings[0].claim == "Capability detected: encrypt data using rc4 (MBC: C0028.002)"
+
+
+def test_multiple_mbc_ids_sorted_and_comma_joined(monkeypatch):
+    rules = {
+        "some rule": {
+            "meta": {
+                "namespace": "host-interaction/file-system",
+                "attack": [],
+                "mbc": [{"id": "C0002.002"}, {"id": "C0002.001"}],
+            },
+            "matches": [],
+        }
+    }
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
+    sr = CapaTool().run(_state())
+    assert sr.findings[0].claim == "Capability detected: some rule (MBC: C0002.001, C0002.002)"
+
+
+def test_no_mbc_data_leaves_claim_unchanged(monkeypatch):
+    rules = {"some rule": {"meta": {"namespace": "host-interaction/file-system", "attack": []},
+                           "matches": []}}
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
+    sr = CapaTool().run(_state())
+    assert sr.findings[0].claim == "Capability detected: some rule"
