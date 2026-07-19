@@ -102,3 +102,53 @@ def test_normal_entropy_sections_not_flagged(monkeypatch):
     monkeypatch.setattr(pefile, "PE", _FakePENormalEntropy)
     sr = PEHeaderTool().run(_state())
     assert not any("high-entropy section" in f.claim.lower() for f in sr.findings)
+
+
+class _FakeSectionWithOffsets:
+    def __init__(self, name: bytes, ptr: int, size: int):
+        self.Name = name
+        self.PointerToRawData = ptr
+        self.SizeOfRawData = size
+
+    def get_entropy(self):
+        return 5.0
+
+
+class _FakePEForOverlay:
+    def __init__(self, path, fast_load=True):
+        self.sections = [_FakeSectionWithOffsets(b".text\x00\x00\x00", 0x400, 0x200)]
+
+    def parse_data_directories(self):
+        pass
+
+    def get_imphash(self):
+        return None
+
+
+def _state_with_size(size: int) -> AnalysisState:
+    sample = Sample(sha256="a" * 64, md5="b" * 32, path="/tmp/x.malz",
+                    file_type="PE", size=size, provenance=Provenance())
+    return AnalysisState(run_id="r1", sample=sample)
+
+
+def test_overlay_detected_when_file_larger_than_sections(monkeypatch):
+    monkeypatch.setattr(pefile, "PE", _FakePEForOverlay)
+    state = _state_with_size(0x400 + 0x200 + 5000)  # 5000 bytes of overlay
+    sr = PEHeaderTool().run(state)
+    overlay = [f for f in sr.findings if "overlay" in f.claim.lower()]
+    assert len(overlay) == 1
+    assert "5000" in overlay[0].claim
+
+
+def test_no_overlay_when_file_size_matches_sections(monkeypatch):
+    monkeypatch.setattr(pefile, "PE", _FakePEForOverlay)
+    state = _state_with_size(0x400 + 0x200)  # exact match, no overlay
+    sr = PEHeaderTool().run(state)
+    assert not any("overlay" in f.claim.lower() for f in sr.findings)
+
+
+def test_small_padding_not_flagged_as_overlay(monkeypatch):
+    monkeypatch.setattr(pefile, "PE", _FakePEForOverlay)
+    state = _state_with_size(0x400 + 0x200 + 8)  # 8 bytes: normal alignment padding
+    sr = PEHeaderTool().run(state)
+    assert not any("overlay" in f.claim.lower() for f in sr.findings)

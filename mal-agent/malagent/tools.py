@@ -203,6 +203,28 @@ class PEHeaderTool:
                 category="capability", severity="medium", confidence=0.6,
                 evidence=[sec_ev.evidence_id], source_stage="triage"))
 
+        # Overlay detection: data appended after the last section is outside
+        # every declared section and invisible to normal PE parsing -- a
+        # common way to hide a payload.
+        sections = getattr(pe, "sections", [])
+        if sections:
+            try:
+                end_of_sections = max(s.PointerToRawData + s.SizeOfRawData for s in sections)
+                overlay_size = state.sample.size - end_of_sections
+            except Exception:
+                overlay_size = 0
+            if overlay_size > 16:
+                ov_ev = EvidenceRecord(evidence_id=_id("ev", input_ref, "overlay"),
+                                       artifact_id=art.artifact_id, locator="overlay:size",
+                                       excerpt=str(overlay_size), trust="tool")
+                evidence.append(ov_ev)
+                findings.append(Finding(
+                    finding_id=_id("f", input_ref, "overlay"),
+                    claim=f"File contains {overlay_size} bytes of overlay data appended "
+                          f"after the last PE section -- a common technique for hiding payloads.",
+                    category="capability", severity="medium", confidence=0.55,
+                    evidence=[ov_ev.evidence_id], source_stage="triage"))
+
         return StageResult(stage="triage", status="ok", findings=findings,
                            artifacts=[art], evidence=evidence, iocs=iocs,
                            notes=f"imports={len(imports)}, risky={len(findings)}"
