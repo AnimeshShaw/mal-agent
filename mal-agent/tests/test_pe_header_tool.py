@@ -53,3 +53,52 @@ def test_imphash_failure_degrades_gracefully_not_error(monkeypatch):
     sr = PEHeaderTool().run(_state())
     assert sr.status == "ok"
     assert [i for i in sr.iocs if i.type == "hash"] == []
+
+
+class _FakeSection:
+    def __init__(self, name: bytes, entropy: float):
+        self.Name = name
+        self._entropy = entropy
+
+    def get_entropy(self):
+        return self._entropy
+
+
+class _FakePEWithSections:
+    def __init__(self, path, fast_load=True):
+        self.sections = [
+            _FakeSection(b".text\x00\x00\x00", 5.1),
+            _FakeSection(b".data\x00\x00\x00", 7.8),
+        ]
+
+    def parse_data_directories(self):
+        pass
+
+    def get_imphash(self):
+        return None
+
+
+def test_high_entropy_section_flagged(monkeypatch):
+    monkeypatch.setattr(pefile, "PE", _FakePEWithSections)
+    sr = PEHeaderTool().run(_state())
+    high_entropy = [f for f in sr.findings if "high-entropy section" in f.claim.lower()]
+    assert len(high_entropy) == 1
+    assert ".data" in high_entropy[0].claim
+    assert "7.8" in high_entropy[0].claim
+
+
+class _FakePENormalEntropy:
+    def __init__(self, path, fast_load=True):
+        self.sections = [_FakeSection(b".text\x00\x00\x00", 5.1)]
+
+    def parse_data_directories(self):
+        pass
+
+    def get_imphash(self):
+        return None
+
+
+def test_normal_entropy_sections_not_flagged(monkeypatch):
+    monkeypatch.setattr(pefile, "PE", _FakePENormalEntropy)
+    sr = PEHeaderTool().run(_state())
+    assert not any("high-entropy section" in f.claim.lower() for f in sr.findings)

@@ -181,6 +181,28 @@ class PEHeaderTool:
             evidence.append(imp_ev)
             iocs.append(IOC(type="hash", value=imphash, evidence=[imp_ev.evidence_id]))
 
+        # Per-section entropy: a single packed/encrypted section is invisible
+        # in the whole-file average if the rest of the binary is normal.
+        for section in getattr(pe, "sections", []):
+            try:
+                sec_entropy = section.get_entropy()
+            except Exception:
+                continue
+            if sec_entropy <= 7.2:
+                continue
+            sec_name = section.Name.rstrip(b"\x00").decode("latin1", "ignore") or "<unnamed>"
+            sec_ev = EvidenceRecord(evidence_id=_id("ev", input_ref, "secentropy", sec_name),
+                                    artifact_id=art.artifact_id,
+                                    locator=f"section:{sec_name}:entropy",
+                                    excerpt=f"{sec_entropy:.2f}", trust="tool")
+            evidence.append(sec_ev)
+            findings.append(Finding(
+                finding_id=_id("f", input_ref, "secentropy", sec_name),
+                claim=f"High-entropy section {sec_name} ({sec_entropy:.2f}/8.0) "
+                      f"suggests packed or encrypted content.",
+                category="capability", severity="medium", confidence=0.6,
+                evidence=[sec_ev.evidence_id], source_stage="triage"))
+
         return StageResult(stage="triage", status="ok", findings=findings,
                            artifacts=[art], evidence=evidence, iocs=iocs,
                            notes=f"imports={len(imports)}, risky={len(findings)}"
