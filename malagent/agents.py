@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Optional
 from .attck_reference import technique_name
 from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
+from .floss_tool import FlossTool
 from .ghidra_tool import GhidraTool
 from .knowngood import KnownGoodTool
 from .models import ModelRouter
@@ -58,18 +59,25 @@ def _ghidra_functions(state: AnalysisState) -> list[tuple[Finding, EvidenceRecor
     return pairs
 
 
-def make_static_agent(router: Optional[ModelRouter] = None, ghidra: Optional[object] = None):
+def make_static_agent(router: Optional[ModelRouter] = None, ghidra: Optional[object] = None,
+                      floss: Optional[object] = None):
     """Static reasoning stage. Runs headless-Ghidra decompilation (D12) of
     top-N capa-ranked functions first -- this works with no model configured
     at all. With a model configured and functions decompiled, it summarizes
     each function *individually*, grounding each summary in that function's own
     decompile evidence. Without decompiled functions (Ghidra unavailable) it
     falls back to a whole-sample narrative over triage capabilities; without a
-    model at all it honestly reports what it could not determine."""
+    model at all it honestly reports what it could not determine. FlossTool
+    also runs here, unconditionally and independent of Ghidra/the model
+    layer -- it recovers runtime-constructed strings that plain byte-pattern
+    scanning misses, deterministically, so it belongs alongside Ghidra rather
+    than gated behind --enable-models."""
     ghidra = ghidra if ghidra is not None else GhidraTool()
+    floss = floss if floss is not None else FlossTool()
 
     def static_agent(state: AnalysisState) -> AnalysisState:
         _merge(state, ghidra.run(state))
+        _merge(state, floss.run(state))
 
         if router is None:
             _merge(state, StageResult(

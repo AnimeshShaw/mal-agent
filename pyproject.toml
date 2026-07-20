@@ -43,6 +43,14 @@ ghidra = [
   # rules/sigs -- see README "Turn on more" and .env.example.
   "pyghidra>=3.0",
 ]
+floss = [
+  # Deobfuscated string extraction (stack/tight/decoded strings) for
+  # native PE samples -- see floss_tool.py's own docstring for scope
+  # limits (no .NET support, size-capped). Needs a C compiler toolchain
+  # to build its binary2strings dependency (Microsoft C++ Build Tools on
+  # Windows) -- not a pure-Python install.
+  "flare-floss>=3.1",
+]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

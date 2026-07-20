@@ -49,6 +49,16 @@ def check_capa() -> CheckResult:
     return CheckResult("capa", "PASS", f"rules={rules}, sigs={sigs}")
 
 
+def check_floss() -> CheckResult:
+    if not shutil.which("floss"):
+        return CheckResult("floss", "WARN",
+                           "not on PATH -- deobfuscated string extraction disabled "
+                           "(pip install flare-floss; needs a C compiler toolchain -- "
+                           "Microsoft C++ Build Tools on Windows -- to build its "
+                           "binary2strings dependency)")
+    return CheckResult("floss", "PASS", "on PATH")
+
+
 def check_ghidra() -> CheckResult:
     from .ghidra_tool import find_headless_ghidra
     home = os.getenv("GHIDRA_HOME")
@@ -136,6 +146,7 @@ def run_checks() -> list[CheckResult]:
     return [
         check_pefile(),
         check_capa(),
+        check_floss(),
         check_ghidra(),
         check_java(),
         check_ollama(),

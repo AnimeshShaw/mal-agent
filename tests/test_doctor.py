@@ -175,13 +175,28 @@ def test_known_good_configured_but_missing_file_warns(monkeypatch, tmp_path):
 
 # ---------- run_checks / format_report / exit_code ----------
 
-def test_run_checks_returns_all_eight_checks():
+def test_run_checks_returns_all_nine_checks():
     results = doctor.run_checks()
-    assert len(results) == 8
+    assert len(results) == 9
     assert {r.name for r in results} == {
-        "pefile", "capa", "ghidra", "java", "ollama",
+        "pefile", "capa", "ghidra", "java", "ollama", "floss",
         "cloud_keys", "database", "known_good_allowlist",
     }
+
+
+# ---------- check_floss ----------
+
+def test_floss_not_on_path_warns(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    result = doctor.check_floss()
+    assert result.status == "WARN"
+    assert "not on PATH" in result.detail
+
+
+def test_floss_on_path_passes(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/floss")
+    result = doctor.check_floss()
+    assert result.status == "PASS"
 
 
 def test_exit_code_zero_when_no_fail():
