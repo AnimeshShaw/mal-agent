@@ -15,6 +15,33 @@ def main(argv=None):
         print(format_report(results))
         return exit_code(results)
 
+    if argv and argv[0] == "evaluate":
+        from . import evaluation
+        ep = argparse.ArgumentParser(prog="mal-agent evaluate",
+                                     description="Score verdicts against a labeled benign/malicious sample set")
+        ep.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
+        ep.add_argument("--enable-models", action="store_true")
+        ep.add_argument("--no-cloud", action="store_true")
+        ep.add_argument("--escalation-provider", default="anthropic",
+                        choices=["openai", "anthropic", "gemini", "xai"])
+        ep.add_argument("--out", default=None, help="also write the report text to this path")
+        eargs = ep.parse_args(argv[1:])
+
+        if not Path(eargs.manifest).exists():
+            print(f"error: {eargs.manifest} not found", file=sys.stderr)
+            return 2
+
+        samples = evaluation.load_labeled_samples(eargs.manifest)
+        policy = EgressPolicy(allow_cloud=not eargs.no_cloud)
+        report = evaluation.evaluate(samples, enable_models=eargs.enable_models, policy=policy,
+                                     escalation_provider=eargs.escalation_provider)
+        text = evaluation.format_report(report)
+        print(text)
+        if eargs.out:
+            Path(eargs.out).write_text(text)
+            print(f"[out] wrote {eargs.out}")
+        return 0
+
     p = argparse.ArgumentParser(prog="mal-agent", description="Evidence-grounded static malware analysis")
     p.add_argument("path", help="path to the sample")
     p.add_argument("--source", default="manual", choices=["soc", "cdc", "manual", "dataset"])

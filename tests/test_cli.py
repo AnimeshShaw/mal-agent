@@ -90,3 +90,41 @@ def test_normal_analyze_invocation_still_works_unaffected(tmp_path, monkeypatch)
     p.write_bytes(body)
     rc = main([str(p), "--source", "dataset"])
     assert rc == 0
+
+
+class _FakeEvalReport:
+    def __init__(self):
+        self._total = 2
+
+
+def test_evaluate_subcommand_prints_report(monkeypatch, tmp_path, capsys):
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n/b,malicious\n")
+
+    import malagent.evaluation as evaluation_module
+    monkeypatch.setattr(evaluation_module, "evaluate", lambda samples, **kw: _FakeEvalReport())
+    monkeypatch.setattr(evaluation_module, "format_report", lambda report: "FAKE EVAL REPORT TEXT")
+
+    rc = main(["evaluate", str(manifest)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "FAKE EVAL REPORT TEXT" in captured.out
+
+
+def test_evaluate_subcommand_writes_out_file_when_requested(monkeypatch, tmp_path):
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n")
+    out_file = tmp_path / "results.txt"
+
+    import malagent.evaluation as evaluation_module
+    monkeypatch.setattr(evaluation_module, "evaluate", lambda samples, **kw: _FakeEvalReport())
+    monkeypatch.setattr(evaluation_module, "format_report", lambda report: "FAKE EVAL REPORT TEXT")
+
+    rc = main(["evaluate", str(manifest), "--out", str(out_file)])
+    assert rc == 0
+    assert out_file.read_text() == "FAKE EVAL REPORT TEXT"
+
+
+def test_evaluate_subcommand_errors_on_missing_manifest(tmp_path):
+    rc = main(["evaluate", str(tmp_path / "nope.csv")])
+    assert rc == 2
