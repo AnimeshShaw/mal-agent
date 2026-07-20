@@ -154,6 +154,56 @@ def test_evaluate_subcommand_errors_on_missing_manifest(tmp_path):
     assert rc == 2
 
 
+def test_evaluate_subcommand_threads_local_model_through(monkeypatch, tmp_path):
+    """--local-model lets you compare local models (e.g. against a
+    calibration set) without editing code -- must actually reach
+    evaluation.evaluate(), not just be accepted and dropped."""
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n")
+
+    captured_kwargs = {}
+    import malagent.evaluation as evaluation_module
+
+    def _fake_evaluate(samples, **kw):
+        captured_kwargs.update(kw)
+        return _FakeEvalReport()
+
+    monkeypatch.setattr(evaluation_module, "evaluate", _fake_evaluate)
+    monkeypatch.setattr(evaluation_module, "format_report", lambda report: "x")
+
+    rc = main(["evaluate", str(manifest), "--enable-models", "--local-model", "gemma4:12b"])
+    assert rc == 0
+    assert captured_kwargs["local_model"] == "gemma4:12b"
+
+
+def test_analyze_subcommand_threads_local_model_through(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    class _FakeAudit:
+        def verify(self):
+            return True
+        records = []
+
+    class _FakeSample:
+        sha256 = "a" * 64
+
+    class _FakeState:
+        sample = _FakeSample()
+
+    def _fake_analyze(path, **kw):
+        captured_kwargs.update(kw)
+        from malagent.contracts import Verdict
+        return _FakeState(), Verdict(sample_sha256="a" * 64, verdict="benign"), "md", "txt", _FakeAudit()
+
+    monkeypatch.setattr("malagent.cli.analyze", _fake_analyze)
+    p = tmp_path / "sample.bin"
+    p.write_bytes(b"MZ" + b"\x00" * 64)
+
+    rc = main([str(p), "--enable-models", "--local-model", "gemma4:12b", "--out", str(tmp_path / "out")])
+    assert rc == 0
+    assert captured_kwargs["local_model"] == "gemma4:12b"
+
+
 class _FakeAblationReport:
     def __init__(self):
         self.results = [1, 2]

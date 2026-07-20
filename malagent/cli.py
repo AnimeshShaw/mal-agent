@@ -22,6 +22,8 @@ def main(argv=None):
         ep.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
         ep.add_argument("--enable-models", action="store_true")
         ep.add_argument("--no-cloud", action="store_true")
+        ep.add_argument("--local-model", default="qwen2.5-coder:7b",
+                        help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
         ep.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
         ep.add_argument("--out", default=None, help="also write the report text to this path")
@@ -34,6 +36,7 @@ def main(argv=None):
         samples = evaluation.load_labeled_samples(eargs.manifest)
         policy = EgressPolicy(allow_cloud=not eargs.no_cloud)
         report = evaluation.evaluate(samples, enable_models=eargs.enable_models, policy=policy,
+                                     local_model=eargs.local_model,
                                      escalation_provider=eargs.escalation_provider)
         text = evaluation.format_report(report)
         print(text)
@@ -75,6 +78,8 @@ def main(argv=None):
                         help="without this, no model is configured and every case is "
                              "conservatively flagged as unverified (honest, but degenerate)")
         ap.add_argument("--no-cloud", action="store_true")
+        ap.add_argument("--local-model", default="qwen2.5-coder:7b",
+                       help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
         ap.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
         ap.add_argument("--out", default=None, help="also write the report text to this path")
@@ -89,7 +94,7 @@ def main(argv=None):
                                   file_type="PE", size=1)
             state = AnalysisState(run_id="ablate-critic", sample=dummy_sample,
                                   policy=policy, budget=StepBudget())
-            local = build_provider("ollama", "qwen2.5-coder:7b")
+            local = build_provider("ollama", aargs.local_model)
             esc = build_provider(aargs.escalation_provider) if aargs.escalation_provider else None
             router = ModelRouter(state, local=local, escalation=esc)
 
@@ -109,6 +114,8 @@ def main(argv=None):
                    help="enable local/cloud model stage (needs Ollama or API keys)")
     p.add_argument("--no-cloud", action="store_true", help="disable cloud escalation (local only)")
     p.add_argument("--allow-pseudocode-egress", action="store_true")
+    p.add_argument("--local-model", default="qwen2.5-coder:7b",
+                   help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
     p.add_argument("--escalation-provider", default="anthropic",
                    choices=["openai", "anthropic", "gemini", "xai"])
     p.add_argument("--out", default="./mal-agent-reports",
@@ -127,7 +134,7 @@ def main(argv=None):
 
     state, verdict, report_md, report_txt, audit = analyze(
         args.path, provenance=prov, policy=policy, enable_models=args.enable_models,
-        escalation_provider=args.escalation_provider)
+        local_model=args.local_model, escalation_provider=args.escalation_provider)
 
     print(report_md)
     print(f"\n[audit] chain intact: {audit.verify()}  records: {len(audit.records)}")
