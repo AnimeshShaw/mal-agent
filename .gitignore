@@ -21,3 +21,7 @@ docs/plans/
 # samples for 'mal-agent evaluate'. Never published: even defanged malware
 # artifacts don't belong in a public git repo.
 /dataset/
+
+# MalwareBazaar API key, if you choose the file-based option over an env
+# var for scripts/fetch_malwarebazaar.py -- never committed, obviously.
+.malwarebazaar_key
