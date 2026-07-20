@@ -128,3 +128,30 @@ def test_evaluate_subcommand_writes_out_file_when_requested(monkeypatch, tmp_pat
 def test_evaluate_subcommand_errors_on_missing_manifest(tmp_path):
     rc = main(["evaluate", str(tmp_path / "nope.csv")])
     assert rc == 2
+
+
+class _FakeAblationReport:
+    def __init__(self):
+        self.results = [1, 2]
+
+
+def test_ablate_critic_subcommand_prints_report(monkeypatch, capsys):
+    import malagent.critic_ablation as ablation_module
+    monkeypatch.setattr(ablation_module, "run_ablation", lambda cases, router: _FakeAblationReport())
+    monkeypatch.setattr(ablation_module, "format_report", lambda report: "FAKE ABLATION REPORT TEXT")
+
+    rc = main(["ablate-critic"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "FAKE ABLATION REPORT TEXT" in captured.out
+
+
+def test_ablate_critic_subcommand_writes_out_file_when_requested(monkeypatch, tmp_path):
+    import malagent.critic_ablation as ablation_module
+    monkeypatch.setattr(ablation_module, "run_ablation", lambda cases, router: _FakeAblationReport())
+    monkeypatch.setattr(ablation_module, "format_report", lambda report: "FAKE ABLATION REPORT TEXT")
+
+    out_file = tmp_path / "ablation.txt"
+    rc = main(["ablate-critic", "--out", str(out_file)])
+    assert rc == 0
+    assert out_file.read_text() == "FAKE ABLATION REPORT TEXT"

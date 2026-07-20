@@ -42,6 +42,42 @@ def main(argv=None):
             print(f"[out] wrote {eargs.out}")
         return 0
 
+    if argv and argv[0] == "ablate-critic":
+        from . import critic_ablation
+        ap = argparse.ArgumentParser(prog="mal-agent ablate-critic",
+                                     description="Measure whether verifier_critic catches "
+                                                 "overclaiming, against a bundled synthetic "
+                                                 "fixture set (no real malware needed)")
+        ap.add_argument("--enable-models", action="store_true",
+                        help="without this, no model is configured and every case is "
+                             "conservatively flagged as unverified (honest, but degenerate)")
+        ap.add_argument("--no-cloud", action="store_true")
+        ap.add_argument("--escalation-provider", default="anthropic",
+                        choices=["openai", "anthropic", "gemini", "xai"])
+        ap.add_argument("--out", default=None, help="also write the report text to this path")
+        aargs = ap.parse_args(argv[1:])
+
+        router = None
+        if aargs.enable_models:
+            from .contracts import AnalysisState, Sample, StepBudget
+            from .models import ModelRouter, build_provider
+            policy = EgressPolicy(allow_cloud=not aargs.no_cloud)
+            dummy_sample = Sample(sha256="0" * 64, md5="0" * 32, path="/synthetic/ablation.bin",
+                                  file_type="PE", size=1)
+            state = AnalysisState(run_id="ablate-critic", sample=dummy_sample,
+                                  policy=policy, budget=StepBudget())
+            local = build_provider("ollama", "qwen2.5-coder:7b")
+            esc = build_provider(aargs.escalation_provider) if aargs.escalation_provider else None
+            router = ModelRouter(state, local=local, escalation=esc)
+
+        report = critic_ablation.run_ablation(critic_ablation.DEFAULT_CASES, router=router)
+        text = critic_ablation.format_report(report)
+        print(text)
+        if aargs.out:
+            Path(aargs.out).write_text(text)
+            print(f"[out] wrote {aargs.out}")
+        return 0
+
     p = argparse.ArgumentParser(prog="mal-agent", description="Evidence-grounded static malware analysis")
     p.add_argument("path", help="path to the sample")
     p.add_argument("--source", default="manual", choices=["soc", "cdc", "manual", "dataset"])
