@@ -21,13 +21,30 @@ _SEV_W = {"info": 0.0, "low": 1.0, "medium": 2.5, "high": 4.0, "critical": 6.0}
 _MIN_HIGH_SIGNAL_CATEGORIES = 3
 
 
+def _is_packing_locator(locator: str) -> bool:
+    """PEHeaderTool's entropy/overlay findings are a real, independent
+    signal (the file is packed/hiding data) that a human analyst would
+    weigh alongside capa's capability detections -- found live during M6
+    evaluation: a real AgentTesla sample had high file+section entropy but
+    only 2 distinct high-signal capa categories, landing in 'undetermined'
+    despite the packing signal effectively being a third one. File entropy,
+    per-section entropy, and overlay detection all indicate the SAME
+    underlying phenomenon, so they map to one 'packing' category, not one
+    each -- a single packed sample shouldn't inflate the category count on
+    its own evidence alone."""
+    return locator == "file:entropy" or locator == "overlay:size" or (
+        locator.startswith("section:") and locator.endswith(":entropy"))
+
+
 def _high_signal_categories(state: AnalysisState, grounded: list[Finding]) -> set[str]:
-    """Distinct capa namespace categories backing this sample's medium+
-    findings. Trusts CapaTool's own severity decision rather than
-    re-deriving namespace membership independently -- CapaTool can demote a
-    rule within an otherwise-high-signal namespace (e.g. load-code/pe's
-    benign structural rules), and re-deriving membership here from the
-    locator alone would silently ignore that demotion."""
+    """Distinct high-signal categories backing this sample's medium+
+    findings -- capa namespace categories, plus a single synthetic
+    'packing' category for entropy/overlay evidence. Trusts each tool's own
+    severity decision rather than re-deriving significance independently --
+    e.g. CapaTool can demote a rule within an otherwise-high-signal
+    namespace (load-code/pe's benign structural rules), and re-deriving
+    membership here from the locator alone would silently ignore that
+    demotion."""
     ev_by_id = {e.evidence_id: e for e in state.evidence}
     categories: set[str] = set()
     for f in grounded:
@@ -35,11 +52,14 @@ def _high_signal_categories(state: AnalysisState, grounded: list[Finding]) -> se
             continue
         for eid in f.evidence:
             ev = ev_by_id.get(eid)
-            if not ev or not ev.locator.startswith("capa:"):
+            if not ev:
                 continue
-            _, ns, _ = ev.locator.split(":", 2)
-            if ns in _HIGH_SIGNAL_NAMESPACES:
-                categories.add(ns)
+            if ev.locator.startswith("capa:"):
+                _, ns, _ = ev.locator.split(":", 2)
+                if ns in _HIGH_SIGNAL_NAMESPACES:
+                    categories.add(ns)
+            elif _is_packing_locator(ev.locator):
+                categories.add("packing")
     return categories
 
 
