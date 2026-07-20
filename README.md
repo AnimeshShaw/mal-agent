@@ -102,7 +102,9 @@ evaluating or contributing to this project.
   minutes on a matched sample, verdict `benign` at high confidence.
 - **Authenticode signature check:** on by default on Windows, no setup
   needed — reports signer identity as informational context (deliberately
-  not a trust short-circuit; see `docs/AUDIT.md` §2 for why).
+  not a trust short-circuit: stolen/abused code-signing certificates are
+  a well-documented real attack vector, so a valid signature is treated
+  as corroborating context, never proof of benignity).
 - **Capabilities + ATT&CK + MBC:** `pip install flare-capa` (puts `capa`
   on PATH). A plain pip install does **not** bundle capa's rules or FLIRT
   signatures — download them and set `CAPA_RULES_PATH` / `CAPA_SIGS_PATH`
@@ -149,8 +151,7 @@ taxonomy (not guesswork), and re-verified live:
 either; there genuinely are 2 high-signal-category matches, just not
 enough to corroborate a verdict either way. This is a heuristic
 improvement grounded in real data, not validated calibration — that
-still needs labeled malware/benign datasets. Full writeup:
-[docs/AUDIT.md](docs/AUDIT.md).
+still needs labeled malware/benign datasets.
 
 Also verified live: the known-good allowlist short-circuit (0.88s vs.
 several minutes on a matched hash), Authenticode signature extraction
@@ -175,14 +176,13 @@ YARA → M4.5 LLM reasoning agents (behavioral narrative + fact-checking
 critic) → mandatory unabridged `.txt` reporting → `doctor` + install
 automation — all shipped and verified live. M5 (dynamic detonation) is
 stubbed by design (v1 is static-only); M6 (calibration against labeled
-datasets) is next. Full detail: [docs/TODO.md](docs/TODO.md).
+malware/benign datasets) is next.
 
 ## Documentation
 
 Full index: [docs/README.md](docs/README.md). Highlights:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how it works),
-[docs/SETUP.md](docs/SETUP.md) (install), [docs/AUDIT.md](docs/AUDIT.md)
-(what's implemented and what isn't).
+[docs/SETUP.md](docs/SETUP.md) (install).
 
 ## Contributing
 

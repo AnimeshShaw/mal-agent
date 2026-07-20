@@ -8,9 +8,6 @@ Thanks for considering a contribution. This project is early-stage
 - Read **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — the evidence-grounding
   model and the "LLMs never decide the verdict" invariant are the two
   design rules every change must respect.
-- Check **[docs/TODO.md](docs/TODO.md)** and **[docs/AUDIT.md](docs/AUDIT.md)**
-  for what's already planned or known-missing before opening an issue
-  proposing it.
 - For anything non-trivial, open an issue to discuss the approach before
   writing code — saves both of us rework.
 

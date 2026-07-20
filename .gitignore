@@ -7,3 +7,12 @@ quarantine/
 out/
 mal-agent-reports/
 .env
+
+# Internal engineering-log docs -- kept locally for reference, not published.
+# (Also stripped from git history entirely; see the full-history backup
+# bundle kept alongside this repo if these ever need to be recovered.)
+docs/AUDIT.md
+docs/TODO.md
+docs/V2-DESIGN.md
+docs/MalAgentArchitecture.md
+docs/plans/

@@ -140,8 +140,8 @@ agent by giving it a severity dial, this test catches it.
 | `GhidraTool` | static | Per-function decompilation of capa-ranked functions | `pyghidra` in-process (not subprocess+Jython — Ghidra ≥11 doesn't bundle Jython) |
 | dynamic sandbox | dynamic | — | Contract-present, intentionally stubbed (v1 is static-only); reports itself as `skipped`, never silently `benign` |
 
-Full technique-coverage matrix (what's implemented, what isn't, and
-why) lives in `docs/AUDIT.md`.
+See `tests/` for the behavior each tool adapter is expected to guarantee
+— every tool has a dedicated test module.
 
 ## 6. Verdict scoring — deterministic, evidence-weighted
 
@@ -170,11 +170,11 @@ why) lives in `docs/AUDIT.md`.
 This gate exists because of a real false positive found during live
 testing: a stock `notepad.exe` scored `MALICIOUS 0.9` before the gate
 existed, because every capa match — including entirely mundane ones like
-"read file" or "get disk size" — carried equal `medium` severity. Fixed,
-verified live, documented in `docs/AUDIT.md` and the README's "Verified
-live" section. **This is a heuristic improvement grounded in real data,
-not validated calibration** — that needs labeled malware/benign datasets
-(tracked as M6 in `docs/TODO.md`).
+"read file" or "get disk size" — carried equal `medium` severity. Fixed
+and verified live — see the README's "Verified live" section.
+**This is a heuristic improvement grounded in real data, not validated
+calibration** — that still needs labeled malware/benign datasets, tracked
+as future work.
 
 ## 7. Model routing & egress policy
 
@@ -256,8 +256,8 @@ tests/              one test file per module/behavior, TDD throughout
 scripts/            install.ps1/.sh (Python-only), install-full.ps1/.sh
                     (also installs Ghidra/JDK/Ollama/Postgres)
 config/             default.yaml
-docs/               ARCHITECTURE.md (this file), SETUP.md, AUDIT.md,
-                    TODO.md, V2-DESIGN.md, the research paper, plans/
+docs/               ARCHITECTURE.md (this file), SETUP.md, the research
+                    paper
 docker-compose.yml  optional Postgres (port 5433, not 5432 -- see file)
 pyproject.toml      package metadata + extras (full, providers, ghidra, dev)
 ```
@@ -265,9 +265,5 @@ pyproject.toml      package metadata + extras (full, providers, ghidra, dev)
 ## Where to go next
 
 - **Setting it up:** `docs/SETUP.md`
-- **What's implemented vs. not, and why:** `docs/AUDIT.md`
-- **Task-by-task roadmap:** `docs/TODO.md`
-- **The bigger design rationale (LLM agent layer, tool sequencing,
-  packaging):** `docs/V2-DESIGN.md`
 - **The research framing this grew out of:**
   `docs/AI-Malware-Analysis-Research-and-Framework.md`
