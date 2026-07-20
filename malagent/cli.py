@@ -42,6 +42,29 @@ def main(argv=None):
             print(f"[out] wrote {eargs.out}")
         return 0
 
+    if argv and argv[0] == "make-manifest":
+        from . import manifest_gen
+        mp = argparse.ArgumentParser(prog="mal-agent make-manifest",
+                                     description="Scan <dir>/benign and <dir>/malicious, write "
+                                                 "the manifest CSV 'mal-agent evaluate' needs")
+        mp.add_argument("dataset_dir")
+        mp.add_argument("--out", default=None, help="default: <dataset_dir>/manifest.csv")
+        margs = mp.parse_args(argv[1:])
+
+        out = margs.out or str(Path(margs.dataset_dir) / "manifest.csv")
+        try:
+            pairs = manifest_gen.scan_dataset_dir(margs.dataset_dir)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        manifest_gen.write_manifest(pairs, out)
+        counts: dict[str, int] = {}
+        for _, label in pairs:
+            counts[label] = counts.get(label, 0) + 1
+        print(f"[manifest] wrote {out}: {len(pairs)} samples "
+              f"({counts.get('benign', 0)} benign, {counts.get('malicious', 0)} malicious)")
+        return 0
+
     if argv and argv[0] == "ablate-critic":
         from . import critic_ablation
         ap = argparse.ArgumentParser(prog="mal-agent ablate-critic",

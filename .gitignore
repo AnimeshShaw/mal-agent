@@ -16,3 +16,8 @@ docs/TODO.md
 docs/V2-DESIGN.md
 docs/MalAgentArchitecture.md
 docs/plans/
+
+# Local evaluation dataset -- real (inert, never-executed) benign/malicious
+# samples for 'mal-agent evaluate'. Never published: even defanged malware
+# artifacts don't belong in a public git repo.
+/dataset/

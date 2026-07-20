@@ -92,6 +92,30 @@ def test_normal_analyze_invocation_still_works_unaffected(tmp_path, monkeypatch)
     assert rc == 0
 
 
+def test_make_manifest_subcommand_writes_csv_and_reports_counts(tmp_path, capsys):
+    (tmp_path / "benign").mkdir()
+    (tmp_path / "malicious").mkdir()
+    (tmp_path / "benign" / "a.exe").write_bytes(b"A")
+    (tmp_path / "malicious" / "b.bin").write_bytes(b"B")
+
+    rc = main(["make-manifest", str(tmp_path)])
+    assert rc == 0
+    manifest = tmp_path / "manifest.csv"
+    assert manifest.exists()
+    captured = capsys.readouterr()
+    assert "1 benign" in captured.out
+    assert "1 malicious" in captured.out
+
+
+def test_make_manifest_subcommand_errors_cleanly_on_empty_dataset(tmp_path, capsys):
+    (tmp_path / "benign").mkdir()
+    (tmp_path / "malicious").mkdir()
+    rc = main(["make-manifest", str(tmp_path)])
+    assert rc == 2
+    captured = capsys.readouterr()
+    assert "no sample files found" in captured.err
+
+
 class _FakeEvalReport:
     def __init__(self):
         self._total = 2
