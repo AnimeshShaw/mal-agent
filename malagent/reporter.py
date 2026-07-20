@@ -86,9 +86,23 @@ def build_verdict(state: AnalysisState) -> Verdict:
     categories = _high_signal_categories(state, grounded)
     corroborated = len(categories) >= _MIN_HIGH_SIGNAL_CATEGORIES
 
-    # coverage: did the deep stages actually run?
-    deep_ran = any(sr.stage in ("static", "dynamic") and sr.status == "ok"
-                   for sr in state.stage_results)
+    # Coverage: did we do enough deterministic analysis to trust a benign
+    # call? This must NOT depend on whether an LLM happened to respond --
+    # that's an availability question, not a coverage one, and conflating
+    # them is exactly what caused a real M6 evaluation run to report
+    # TN=0 across 21 genuinely benign samples (deep_ran was structurally
+    # False for all of them because --enable-models wasn't passed, not
+    # because coverage was actually insufficient). capa is the tool that
+    # sources the corroboration-gate signal itself; it running "ok"
+    # (whether it matched 0 or N rules -- CapaTool reports "ok" either way)
+    # is real, deterministic coverage on its own, independent of any model.
+    # A model-backed static/dynamic stage succeeding still counts too, and
+    # strengthens the claim further, but is no longer required.
+    capa_ran = any(sr.stage == "triage" and sr.status == "ok"
+                  and any(a.tool == "capa" for a in sr.artifacts)
+                  for sr in state.stage_results)
+    deep_ran = capa_ran or any(sr.stage in ("static", "dynamic") and sr.status == "ok"
+                              for sr in state.stage_results)
 
     if score >= 6 and corroborated:
         verdict, conf = "malicious", min(0.9, 0.5 + score / 20)
