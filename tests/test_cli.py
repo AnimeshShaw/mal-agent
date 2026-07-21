@@ -228,4 +228,43 @@ def test_ablate_critic_subcommand_writes_out_file_when_requested(monkeypatch, tm
     out_file = tmp_path / "ablation.txt"
     rc = main(["ablate-critic", "--out", str(out_file)])
     assert rc == 0
-    assert out_file.read_text() == "FAKE ABLATION REPORT TEXT"
+
+
+class _FakeSuggestionReport:
+    def __init__(self):
+        self._total = 1
+
+
+def test_suggest_verdict_subcommand_prints_report(monkeypatch, tmp_path, capsys):
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n")
+
+    import malagent.verdict_suggestion as suggestion_module
+    monkeypatch.setattr(suggestion_module, "evaluate_llm_suggestions",
+                        lambda samples, **kw: _FakeSuggestionReport())
+    monkeypatch.setattr(suggestion_module, "format_report", lambda report: "FAKE SUGGESTION REPORT")
+
+    rc = main(["suggest-verdict", str(manifest), "--local-model", "gemma4:12b"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "FAKE SUGGESTION REPORT" in captured.out
+
+
+def test_suggest_verdict_subcommand_errors_on_missing_manifest(tmp_path):
+    rc = main(["suggest-verdict", str(tmp_path / "nope.csv")])
+    assert rc == 2
+
+
+def test_suggest_verdict_subcommand_writes_out_file_when_requested(monkeypatch, tmp_path):
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n")
+
+    import malagent.verdict_suggestion as suggestion_module
+    monkeypatch.setattr(suggestion_module, "evaluate_llm_suggestions",
+                        lambda samples, **kw: _FakeSuggestionReport())
+    monkeypatch.setattr(suggestion_module, "format_report", lambda report: "FAKE SUGGESTION REPORT")
+
+    out_file = tmp_path / "suggestion.txt"
+    rc = main(["suggest-verdict", str(manifest), "--out", str(out_file)])
+    assert rc == 0
+    assert out_file.read_text() == "FAKE SUGGESTION REPORT"

@@ -68,6 +68,48 @@ def main(argv=None):
               f"({counts.get('benign', 0)} benign, {counts.get('malicious', 0)} malicious)")
         return 0
 
+    if argv and argv[0] == "suggest-verdict":
+        from . import evaluation, verdict_suggestion
+        vp = argparse.ArgumentParser(prog="mal-agent suggest-verdict",
+                                     description="Non-binding: ask an LLM to holistically judge "
+                                                 "malicious/benign from all gathered evidence, "
+                                                 "measured against ground truth for comparison "
+                                                 "with the deterministic verdict -- never used "
+                                                 "to influence the real verdict")
+        vp.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
+        vp.add_argument("--no-cloud", action="store_true")
+        vp.add_argument("--local-model", default="qwen2.5-coder:7b",
+                        help="Ollama model tag to ask for the verdict suggestion "
+                             "(default: qwen2.5-coder:7b)")
+        vp.add_argument("--escalation-provider", default="anthropic",
+                        choices=["openai", "anthropic", "gemini", "xai"])
+        vp.add_argument("--out", default=None, help="also write the report text to this path")
+        vargs = vp.parse_args(argv[1:])
+
+        if not Path(vargs.manifest).exists():
+            print(f"error: {vargs.manifest} not found", file=sys.stderr)
+            return 2
+
+        from .contracts import AnalysisState, Sample, StepBudget
+        from .models import ModelRouter, build_provider
+        policy = EgressPolicy(allow_cloud=not vargs.no_cloud)
+        dummy_sample = Sample(sha256="0" * 64, md5="0" * 32, path="/synthetic/suggest.bin",
+                              file_type="PE", size=1)
+        dummy_state = AnalysisState(run_id="suggest-verdict", sample=dummy_sample,
+                                    policy=policy, budget=StepBudget())
+        local = build_provider("ollama", vargs.local_model)
+        esc = build_provider(vargs.escalation_provider) if vargs.escalation_provider else None
+        router = ModelRouter(dummy_state, local=local, escalation=esc)
+
+        samples = evaluation.load_labeled_samples(vargs.manifest)
+        report = verdict_suggestion.evaluate_llm_suggestions(samples, router=router)
+        text = verdict_suggestion.format_report(report)
+        print(text)
+        if vargs.out:
+            Path(vargs.out).write_text(text)
+            print(f"[out] wrote {vargs.out}")
+        return 0
+
     if argv and argv[0] == "ablate-critic":
         from . import critic_ablation
         ap = argparse.ArgumentParser(prog="mal-agent ablate-critic",

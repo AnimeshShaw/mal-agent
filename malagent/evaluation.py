@@ -94,6 +94,39 @@ class EvaluationReport:
         return self.undetermined_benign / denom if denom else None
 
 
+class _Counters:
+    """Shared confusion-matrix classification rule: 'malicious'/'suspicious'
+    count as a positive call, 'undetermined' is abstention tracked
+    separately by ground truth, never folded into a bucket. Shared between
+    evaluate() (the deterministic verdict) and verdict_suggestion.py's
+    harness (an LLM's holistic guess) so both are scored by the exact same
+    rule -- any difference between their numbers is a real difference in
+    judgment quality, not an artifact of differently-written bucketing
+    logic."""
+    def __init__(self):
+        self.tp = self.fp = self.tn = self.fn = 0
+        self.undetermined_malicious = self.undetermined_benign = 0
+
+    def classify(self, predicted: str, label: str) -> None:
+        positive = predicted in ("malicious", "suspicious")
+        if predicted == "undetermined":
+            if label == "malicious":
+                self.undetermined_malicious += 1
+            else:
+                self.undetermined_benign += 1
+        elif label == "malicious":
+            self.tp += 1 if positive else 0
+            self.fn += 0 if positive else 1
+        else:  # benign
+            self.fp += 1 if positive else 0
+            self.tn += 0 if positive else 1
+
+    def to_report(self, results: list) -> "EvaluationReport":
+        return EvaluationReport(results=results, tp=self.tp, fp=self.fp, tn=self.tn, fn=self.fn,
+                                undetermined_malicious=self.undetermined_malicious,
+                                undetermined_benign=self.undetermined_benign)
+
+
 def load_labeled_samples(manifest_path: str) -> list[LabeledSample]:
     """CSV manifest: path,label[,notes]. label must be 'benign' or
     'malicious' -- this harness only evaluates binary ground truth; the
@@ -118,7 +151,7 @@ def evaluate(samples: list[LabeledSample], *,
         from .pipeline import analyze as analyze_fn
 
     results: list[SampleResult] = []
-    tp = fp = tn = fn = undetermined_malicious = undetermined_benign = 0
+    counters = _Counters()
     total = len(samples)
 
     for i, sample in enumerate(samples, start=1):
@@ -129,23 +162,9 @@ def evaluate(samples: list[LabeledSample], *,
                                     confidence=verdict.confidence))
         print(f"[{i}/{total}] {sample.path} (actual={sample.label}) -> "
               f"predicted={predicted} (confidence={verdict.confidence})", flush=True)
+        counters.classify(predicted, sample.label)
 
-        positive = predicted in ("malicious", "suspicious")
-        if predicted == "undetermined":
-            if sample.label == "malicious":
-                undetermined_malicious += 1
-            else:
-                undetermined_benign += 1
-        elif sample.label == "malicious":
-            tp += 1 if positive else 0
-            fn += 0 if positive else 1
-        else:  # benign
-            fp += 1 if positive else 0
-            tn += 0 if positive else 1
-
-    return EvaluationReport(results=results, tp=tp, fp=fp, tn=tn, fn=fn,
-                            undetermined_malicious=undetermined_malicious,
-                            undetermined_benign=undetermined_benign)
+    return counters.to_report(results)
 
 
 def format_report(report: EvaluationReport) -> str:
