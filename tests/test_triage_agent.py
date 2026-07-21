@@ -35,3 +35,28 @@ def test_triage_agent_includes_authenticode_check(monkeypatch, tmp_path):
                   "stderr": ""})())
     state = triage_agent(_state(tmp_path))
     assert any("Authenticode" in f.claim for f in state.findings)
+
+
+def test_triage_agent_skips_remaining_tools_on_known_good_match(monkeypatch, tmp_path):
+    """A known-good hash match already decides the verdict outright
+    (reporter.build_verdict()'s verdict_factor short-circuit) -- running
+    StaticFeaturesTool/PEHeaderTool/CapaTool/AuthenticodeTool afterward is
+    pure wasted work, and capa specifically can take 100+ seconds on a real
+    binary. Live-verified: certutil.exe with its real hash allowlisted
+    still ran the full capa analysis (80 rules matched) before this fix,
+    for a verdict that was already decided before capa even started."""
+    hashes_file = tmp_path / "hashes.txt"
+    hashes_file.write_text("a" * 64 + "\n")
+    monkeypatch.setenv("KNOWN_GOOD_HASHES_PATH", str(hashes_file))
+    state = triage_agent(_state(tmp_path))
+    assert len(state.stage_results) == 1
+    assert state.stage_results[0].notes == "known-good hash match"
+
+
+def test_triage_agent_runs_remaining_tools_when_no_known_good_match(monkeypatch, tmp_path):
+    """Backward compatibility: without a match (or without an allowlist
+    configured at all), every other triage tool must still run exactly as
+    before -- only a real match skips them."""
+    monkeypatch.delenv("KNOWN_GOOD_HASHES_PATH", raising=False)
+    state = triage_agent(_state(tmp_path))
+    assert len(state.stage_results) > 1

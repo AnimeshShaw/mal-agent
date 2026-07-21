@@ -6,7 +6,7 @@ from .attck_reference import technique_name
 from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
 from .floss_tool import FlossTool
 from .ghidra_tool import GhidraTool
-from .knowngood import KnownGoodTool
+from .knowngood import KnownGoodTool, is_known_good_match
 from .models import ModelRouter
 from .security import scan_for_injection
 from .tools import StaticFeaturesTool, PEHeaderTool, CapaTool, AuthenticodeTool, _id
@@ -20,10 +20,18 @@ def _merge(state: AnalysisState, sr: StageResult) -> None:
 
 
 def triage_agent(state: AnalysisState) -> AnalysisState:
-    # KnownGoodTool runs first: a hash match is the strongest, cheapest
-    # signal available, and needs to land in state.findings before the
-    # orchestrator decides whether to run the expensive stages at all.
-    for tool in (KnownGoodTool(), StaticFeaturesTool(), PEHeaderTool(), CapaTool(), AuthenticodeTool()):
+    # KnownGoodTool runs first and alone: a hash match already decides the
+    # verdict outright via reporter.build_verdict()'s verdict_factor
+    # short-circuit, so running the remaining tools afterward is pure
+    # wasted work -- live-verified: a real, allowlisted certutil.exe still
+    # ran the full capa analysis (80 rules matched, 100+ seconds) for a
+    # verdict that was already decided before capa even started, because
+    # the orchestrator's known-good skip list only covers stages AFTER
+    # triage, not triage's own remaining tools.
+    _merge(state, KnownGoodTool().run(state))
+    if is_known_good_match(state):
+        return state
+    for tool in (StaticFeaturesTool(), PEHeaderTool(), CapaTool(), AuthenticodeTool()):
         _merge(state, tool.run(state))
     return state
 
