@@ -17,6 +17,7 @@ Deliberately narrow in scope, based on live testing against real samples:
 """
 from __future__ import annotations
 import json
+import os
 import shutil
 import subprocess
 from typing import Optional
@@ -64,6 +65,12 @@ class FlossTool:
             return StageResult(stage="static", status="skipped",
                                notes="floss not on PATH -- deobfuscated string extraction "
                                      "disabled (pip install flare-floss)")
+
+        if os.getenv("MAL_AGENT_SKIP_FLOSS"):
+            return StageResult(stage="static", status="skipped",
+                               notes="skipped: MAL_AGENT_SKIP_FLOSS is set -- useful for batch "
+                                     "runs (e.g. M6 calibration) that only need the verdict "
+                                     "score, which floss never contributes to (IOCs only)")
 
         if state.sample.size > _MAX_SIZE_BYTES:
             return StageResult(stage="static", status="skipped",

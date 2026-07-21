@@ -89,6 +89,19 @@ def test_skips_when_floss_not_on_path(monkeypatch):
     assert "not on PATH" in sr.notes
 
 
+def test_skips_via_opt_out_env_var_even_when_floss_present(monkeypatch):
+    """A calibration run measuring verdict accuracy doesn't need FLOSS at
+    all -- it only ever contributes IOCs, never a scored finding -- but
+    FLOSS's per-sample emulation cost is real (~57s live on a 104KB native
+    file). MAL_AGENT_SKIP_FLOSS lets a batch run skip that cost entirely
+    without needing to uninstall/hide the binary."""
+    monkeypatch.setattr(floss_tool, "find_floss", lambda: "/usr/bin/floss")
+    monkeypatch.setenv("MAL_AGENT_SKIP_FLOSS", "1")
+    sr = FlossTool().run(_state())
+    assert sr.status == "skipped"
+    assert "MAL_AGENT_SKIP_FLOSS" in sr.notes
+
+
 def test_skips_when_sample_exceeds_size_cap(monkeypatch):
     monkeypatch.setattr(floss_tool, "find_floss", lambda: "/usr/bin/floss")
     sr = FlossTool().run(_state(size=floss_tool._MAX_SIZE_BYTES + 1))
