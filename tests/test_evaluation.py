@@ -47,6 +47,19 @@ def _fake_analyze_factory(verdict_by_path):
     return _fake_analyze
 
 
+def test_evaluate_prints_progress_per_sample(capsys):
+    """A 46-sample real-data run has no other visibility into progress --
+    evaluate() must print something after each sample completes, not just
+    at the very end, so a long-running batch isn't silent."""
+    samples = [LabeledSample(path="mal1", label="malicious"),
+              LabeledSample(path="ben1", label="benign")]
+    fake_analyze = _fake_analyze_factory({"mal1": "malicious", "ben1": "benign"})
+    evaluate(samples, analyze_fn=fake_analyze)
+    out = capsys.readouterr().out
+    assert "[1/2]" in out and "mal1" in out
+    assert "[2/2]" in out and "ben1" in out
+
+
 def test_evaluate_computes_confusion_matrix_treating_suspicious_as_positive():
     samples = [
         LabeledSample(path="mal1", label="malicious"),   # predicted malicious -> TP

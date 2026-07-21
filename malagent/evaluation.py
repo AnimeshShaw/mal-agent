@@ -119,13 +119,16 @@ def evaluate(samples: list[LabeledSample], *,
 
     results: list[SampleResult] = []
     tp = fp = tn = fn = undetermined_malicious = undetermined_benign = 0
+    total = len(samples)
 
-    for sample in samples:
+    for i, sample in enumerate(samples, start=1):
         _, verdict, _, _, _ = analyze_fn(
             sample.path, provenance=Provenance(source="dataset"), **analyze_kwargs)
         predicted = verdict.verdict
         results.append(SampleResult(sample=sample, predicted_verdict=predicted,
                                     confidence=verdict.confidence))
+        print(f"[{i}/{total}] {sample.path} (actual={sample.label}) -> "
+              f"predicted={predicted} (confidence={verdict.confidence})", flush=True)
 
         positive = predicted in ("malicious", "suspicious")
         if predicted == "undetermined":
