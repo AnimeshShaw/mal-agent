@@ -316,6 +316,17 @@ def _capa_severity(rule_name: str, namespace: str) -> str:
     return "medium" if top in _HIGH_SIGNAL_NAMESPACES else "info"
 
 
+# capa does not scale gracefully to very large files -- live-verified: a
+# real, benign 92MB node.exe caused capa to still be running after several
+# minutes in an isolated test (no other process competing for CPU). File-
+# size inflation is also a known malware evasion technique (the 87MB
+# LockBit sample downloaded for this project's own M6 dataset is plausibly
+# an example), so this matters for real samples too, not just large
+# legitimate binaries. Below the RedLineStealer-sized samples (~35MB) this
+# project's own dataset already analyzes successfully.
+_CAPA_MAX_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
+
+
 class CapaTool:
     """capa capability mapping (already emits ATT&CK/MBC). Optional; via CLI if present."""
     name = "capa"
@@ -328,6 +339,14 @@ class CapaTool:
             return StageResult(stage="triage", status="skipped",
                                unresolved=["Capability mapping skipped: 'capa' not on PATH."],
                                notes="install flare-capa for ATT&CK-mapped capabilities")
+        if state.sample.size > _CAPA_MAX_SIZE_BYTES:
+            return StageResult(stage="triage", status="skipped",
+                               unresolved=[f"Capability mapping skipped: sample "
+                                          f"({state.sample.size} bytes) exceeds capa's "
+                                          f"practical size cap ({_CAPA_MAX_SIZE_BYTES} bytes) "
+                                          f"-- capa's analysis does not scale gracefully to "
+                                          f"very large files."],
+                               notes="skipped: exceeds capa size cap")
         try:
             out = subprocess.run(_capa_command(state.sample.path),
                                  capture_output=True, timeout=300)

@@ -19,13 +19,13 @@ from malagent.contracts import AnalysisState, Provenance, Sample
 from malagent.tools import CapaTool
 
 
-def _sample():
+def _sample(size=10):
     return Sample(sha256="a" * 64, md5="b" * 32, path="/tmp/x.malz",
-                  file_type="PE", size=10, provenance=Provenance())
+                  file_type="PE", size=size, provenance=Provenance())
 
 
-def _state():
-    return AnalysisState(run_id="r1", sample=_sample())
+def _state(size=10):
+    return AnalysisState(run_id="r1", sample=_sample(size))
 
 
 def _fake_capa_run(rules: dict):
@@ -204,3 +204,26 @@ def test_no_mbc_data_leaves_claim_unchanged(monkeypatch):
     monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
     sr = CapaTool().run(_state())
     assert sr.findings[0].claim == "Capability detected: some rule"
+
+
+def test_skips_oversized_samples_without_invoking_capa(monkeypatch):
+    """capa does not scale gracefully to very large files -- live-verified:
+    a real, benign 92MB node.exe caused capa to still be running after
+    several minutes in an isolated test (no other process competing).
+    File-size inflation is also a known malware evasion technique, so this
+    matters for real samples too, not just large legitimate binaries."""
+    from malagent import tools as tools_module
+    called = []
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: called.append(1))
+    sr = CapaTool().run(_state(size=tools_module._CAPA_MAX_SIZE_BYTES + 1))
+    assert sr.status == "skipped"
+    assert "size cap" in sr.notes
+    assert called == []
+
+
+def test_runs_normally_for_samples_within_size_cap(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", _fake_capa_run({}))
+    sr = CapaTool().run(_state(size=1024))
+    assert sr.status == "ok"
