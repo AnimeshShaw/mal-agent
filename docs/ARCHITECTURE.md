@@ -268,6 +268,40 @@ docker-compose.yml  optional Postgres (port 5433, not 5432 -- see file)
 pyproject.toml      package metadata + extras (full, providers, ghidra, dev)
 ```
 
+## 13. Future work: dynamic-analysis options (scoped, not implemented)
+
+The dynamic stage is intentionally stubbed (§5, §2) — v1 is static-only by
+design, not by oversight. Two concrete options were evaluated for closing
+the "static-only ceiling" this project has repeatedly hit in practice
+(packed/obfuscated commodity malware evading capa/FLOSS detection
+entirely, landing in `undetermined`), neither implemented, both requiring
+a decision outside pure engineering effort before work should start:
+
+**`qilingframework/qiling`** — OS-aware binary emulation (Python-native,
+built on Unicorn; PE/ELF/Mach-O; instruction/memory/syscall-level hooking)
+run against the sample directly, without a VM or hypervisor. Comparable
+in scope to the existing Ghidra/FLOSS integrations — not a small add, but
+a real path to recovering decrypted strings and API call sequences from
+packed samples statically-invisible today. **Blocker: it's GPL-2.0.**
+Whether using it as a dependency forces any relicensing of this MIT
+project is a genuine open question that depends on integration tightness,
+not something to resolve by assumption — needs an explicit decision, not
+a silent default either way.
+
+**`kevoreilly/CAPEv2`** — the architecturally correct answer for real
+dynamic detonation, via integrating with an *existing* CAPE instance
+(submit sample, ingest its JSON report as another evidence source — same
+shape as ingesting capa's JSON) rather than building an in-house sandbox.
+Confirmed not pip-installable: a full platform requiring a KVM hypervisor,
+Windows VM images, and a multi-service host stack. More importantly, it
+means this project would actually execute untrusted samples — a
+categorically different risk and infrastructure commitment than the
+current "static-only, never execute" design, and deserves its own scoping
+conversation rather than being folded in as a bolt-on.
+
+Both were reviewed against actual current READMEs (license, install
+model, maintenance status), not recollection, before this assessment.
+
 ## Where to go next
 
 - **Setting it up:** `docs/SETUP.md`
