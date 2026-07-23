@@ -6,6 +6,7 @@ from .attck_reference import technique_name
 from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
 from .floss_tool import FlossTool
 from .ghidra_tool import GhidraTool
+from .ioc_reputation import IocReputationTool
 from .knowngood import KnownGoodTool, is_known_good_match
 from .models import ModelRouter
 from .security import scan_for_injection
@@ -31,7 +32,8 @@ def triage_agent(state: AnalysisState) -> AnalysisState:
     _merge(state, KnownGoodTool().run(state))
     if is_known_good_match(state):
         return state
-    for tool in (StaticFeaturesTool(), PEHeaderTool(), CapaTool(), AuthenticodeTool()):
+    for tool in (StaticFeaturesTool(), IocReputationTool(), PEHeaderTool(), CapaTool(),
+                 AuthenticodeTool()):
         _merge(state, tool.run(state))
     return state
 

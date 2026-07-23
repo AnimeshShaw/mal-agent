@@ -142,6 +142,27 @@ def check_known_good_allowlist() -> CheckResult:
                        f"{len(hashes)} entries loaded from {path}")
 
 
+def check_ioc_reputation() -> CheckResult:
+    from .ioc_reputation import _load_list
+    ip_path = os.getenv("IP_BLOCKLIST_PATH")
+    domain_path = os.getenv("DOMAIN_BLOCKLIST_PATH")
+    if not ip_path and not domain_path:
+        return CheckResult("ioc_reputation", "PASS", "not configured (optional)")
+
+    counts = []
+    if ip_path:
+        if not Path(ip_path).is_file():
+            return CheckResult("ioc_reputation", "WARN",
+                               f"IP_BLOCKLIST_PATH={ip_path} set but missing")
+        counts.append(f"{len(_load_list(ip_path))} IPs")
+    if domain_path:
+        if not Path(domain_path).is_file():
+            return CheckResult("ioc_reputation", "WARN",
+                               f"DOMAIN_BLOCKLIST_PATH={domain_path} set but missing")
+        counts.append(f"{len(_load_list(domain_path))} domains")
+    return CheckResult("ioc_reputation", "PASS", ", ".join(counts) + " loaded")
+
+
 def run_checks() -> list[CheckResult]:
     return [
         check_pefile(),
@@ -153,6 +174,7 @@ def run_checks() -> list[CheckResult]:
         check_cloud_keys(),
         check_database(),
         check_known_good_allowlist(),
+        check_ioc_reputation(),
     ]
 
 

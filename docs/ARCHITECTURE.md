@@ -134,6 +134,7 @@ agent by giving it a severity dial, this test catches it.
 |---|---|---|---|
 | `KnownGoodTool` | triage | Hash-allowlist match → short-circuits to `benign` | NSRL RDS-style CSV/hash-per-line |
 | `StaticFeaturesTool` | triage | Entropy, ASCII + wide/UTF-16LE strings, IOC extraction (IPs/URLs/mutexes) | Suspicious-string heuristics |
+| `IocReputationTool` | triage | Cross-references extracted IPs/domains/URLs against local threat-intel blocklists | Zero network egress; runs after `StaticFeaturesTool`; matches count toward the corroboration gate (§6) |
 | `PEHeaderTool` | triage | Imports, imphash, per-section entropy, overlay detection, Rich header checksum | `pefile`, `fast_load` mode |
 | `AuthenticodeTool` | triage | Signer identity (informational — *not* a trust short-circuit) | Windows-only, `Get-AuthenticodeSignature` via env-var-passed subprocess |
 | `CapaTool` | triage | Capability + ATT&CK + MBC (Malware Behavior Catalog) detection | Real capa-rules corpus; namespace-aware severity (see §6) |
@@ -154,9 +155,14 @@ See `tests/` for the behavior each tool adapter is expected to guarantee
 3. **Corroboration gate:** `capa` findings only count as `medium`+ if
    their rule's namespace is inherently attacker-relevant on its own
    (`anti-analysis`, `collection`, `communication`, `exploitation`,
-   `impact`, `load-code`, `persistence`, `malware-family`). A verdict of
-   `suspicious`/`malicious` additionally requires matches spanning **≥3
-   distinct** such namespace categories — a handful of matches in just
+   `impact`, `load-code`, `persistence`, `malware-family`). Two synthetic
+   categories count alongside capa namespaces: `packing` (high file/section
+   entropy or an overlay, from `PEHeaderTool`/`StaticFeaturesTool` —
+   collapsed to one category regardless of how many of the three signals
+   fire, since they indicate the same underlying phenomenon) and
+   `ioc_reputation` (a local blocklist match from `IocReputationTool`). A
+   verdict of `suspicious`/`malicious` additionally requires matches
+   spanning **≥3 distinct** such categories — a handful of matches in just
    one or two categories (individually false-positive-prone: e.g.
    anti-debugging checks are also common in legitimate DRM/licensing
    code) isn't enough to convict alone.

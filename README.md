@@ -122,6 +122,14 @@ evaluating or contributing to this project.
 - **Postgres** (optional — in-memory repository is the supported
   default): `docker compose up -d db`, set `DATABASE_URL` (host port
   **5433**, not 5432 — see the comment in `docker-compose.yml` for why).
+- **IOC reputation (local, zero-egress):** set `IP_BLOCKLIST_PATH` and/or
+  `DOMAIN_BLOCKLIST_PATH` to plain-text lists you download yourself —
+  e.g. [ShadowWhisperer/IPs](https://github.com/ShadowWhisperer/IPs),
+  [hagezi/dns-blocklists](https://github.com/hagezi/dns-blocklists)
+  (Threat Intelligence Feeds subset). Cross-references IPs/domains/URLs
+  already extracted from the sample; matches count toward the
+  corroboration gate. Never bundled into this repo — some of these lists
+  are GPL-3.0, this project is MIT.
 
 ## Verified live (real bugs, found and fixed)
 

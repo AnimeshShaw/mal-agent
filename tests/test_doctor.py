@@ -173,14 +173,41 @@ def test_known_good_configured_but_missing_file_warns(monkeypatch, tmp_path):
     assert result.status == "WARN"
 
 
+# ---------- check_ioc_reputation ----------
+
+def test_ioc_reputation_not_configured_passes(monkeypatch):
+    monkeypatch.delenv("IP_BLOCKLIST_PATH", raising=False)
+    monkeypatch.delenv("DOMAIN_BLOCKLIST_PATH", raising=False)
+    result = doctor.check_ioc_reputation()
+    assert result.status == "PASS"
+    assert "not configured" in result.detail
+
+
+def test_ioc_reputation_configured_with_entries_passes(monkeypatch, tmp_path):
+    p = tmp_path / "ips.txt"
+    p.write_text("1.2.3.4\n")
+    monkeypatch.setenv("IP_BLOCKLIST_PATH", str(p))
+    monkeypatch.delenv("DOMAIN_BLOCKLIST_PATH", raising=False)
+    result = doctor.check_ioc_reputation()
+    assert result.status == "PASS"
+    assert "1 " in result.detail
+
+
+def test_ioc_reputation_configured_but_missing_file_warns(monkeypatch, tmp_path):
+    monkeypatch.setenv("IP_BLOCKLIST_PATH", str(tmp_path / "nope.txt"))
+    monkeypatch.delenv("DOMAIN_BLOCKLIST_PATH", raising=False)
+    result = doctor.check_ioc_reputation()
+    assert result.status == "WARN"
+
+
 # ---------- run_checks / format_report / exit_code ----------
 
-def test_run_checks_returns_all_nine_checks():
+def test_run_checks_returns_all_ten_checks():
     results = doctor.run_checks()
-    assert len(results) == 9
+    assert len(results) == 10
     assert {r.name for r in results} == {
         "pefile", "capa", "ghidra", "java", "ollama", "floss",
-        "cloud_keys", "database", "known_good_allowlist",
+        "cloud_keys", "database", "known_good_allowlist", "ioc_reputation",
     }
 
 
