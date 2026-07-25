@@ -99,7 +99,18 @@ evaluating or contributing to this project.
 - **Known-good hash allowlist** (skips expensive stages on a match): set
   `KNOWN_GOOD_HASHES_PATH` to a hash-per-line file or `hash,name` CSV (an
   NSRL RDS export works directly). Verified live: ~1s instead of several
-  minutes on a matched sample, verdict `benign` at high confidence.
+  minutes on a matched sample, verdict `benign` at high confidence. This
+  is more than a performance shortcut — verified live that without it,
+  the deterministic corroboration gate itself (§6, no LLM involved)
+  false-positives `malicious` at 0.9 confidence on legitimate Windows
+  admin binaries like `schtasks.exe` and `powershell.exe`, because their
+  real, intended function genuinely spans ≥3 attacker-relevant capa
+  namespaces (task scheduling *is* MITRE T1053.005; remote admin tools
+  legitimately need networking). No rule-tuning removes that overlap —
+  it's inherent to what these binaries are for. In production, configure
+  this against as complete a trusted-binary set as practical (a full
+  NSRL RDS import, not just a hand-picked few) rather than relying on
+  the corroboration gate alone for this class of file.
 - **Authenticode signature check:** on by default on Windows, no setup
   needed — reports signer identity as informational context (deliberately
   not a trust short-circuit: stolen/abused code-signing certificates are
