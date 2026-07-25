@@ -45,8 +45,16 @@ def _artifact(tool: str, input_ref: str, content: bytes) -> RawArtifact:
 _IOC_RX = {
     "ip": re.compile(rb"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     "url": re.compile(rb"https?://[\w./%?=&:+-]{4,}", re.I),
-    "domain": re.compile(rb"\b(?:[a-z0-9-]+\.)+(?:com|net|org|info|biz|ru|cn|io|xyz|top)\b", re.I),
-    "email": re.compile(rb"[\w.+-]+@[\w-]+\.[\w.-]+"),
+    # Quantifiers bounded to real-world max lengths (DNS label <=63,
+    # RFC 5321 local-part <=64 / domain <=255) -- NOT just style. Live-verified
+    # ReDoS: the original unbounded `(?:X+\.)+` / `X+@X+\.X+` shapes took
+    # ~10s to fail against a 50,000-byte run of plain word characters
+    # (O(n^2) backtracking), and hung for many CPU-minutes on a real 3MB
+    # malware sample with a large ASCII-heavy section. Bounding every
+    # quantifier caps worst-case backtracking to a small constant
+    # regardless of input size.
+    "domain": re.compile(rb"\b(?:[a-z0-9-]{1,63}\.){1,10}(?:com|net|org|info|biz|ru|cn|io|xyz|top)\b", re.I),
+    "email": re.compile(rb"\b[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{1,255}\b"),
 }
 _SUSPICIOUS_STR = [b"cmd.exe", b"powershell", b"CreateRemoteThread", b"VirtualAlloc",
                    b"WriteProcessMemory", b"RegSetValue", b"schtasks", b"rundll32",

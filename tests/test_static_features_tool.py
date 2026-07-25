@@ -1,6 +1,7 @@
 """Wide/Unicode (UTF-16LE) string extraction -- Windows PEs routinely carry
 these, and the existing ASCII-only extractor misses them entirely."""
 from __future__ import annotations
+import time
 from malagent.contracts import AnalysisState, Provenance, Sample
 from malagent.tools import StaticFeaturesTool
 
@@ -62,3 +63,35 @@ def test_real_looking_domain_still_extracted(tmp_path):
     data = b"MZ" + b"\x00" * 60 + b"evil-c2-panel.top" + b"\x00" * 60
     sr = StaticFeaturesTool().run(_state_for(tmp_path, data))
     assert any(i.type == "domain" and i.value == "evil-c2-panel.top" for i in sr.iocs)
+
+
+def test_real_looking_email_still_extracted(tmp_path):
+    data = b"MZ" + b"\x00" * 60 + b"attacker@evil-c2.top" + b"\x00" * 60
+    sr = StaticFeaturesTool().run(_state_for(tmp_path, data))
+    assert any(i.type == "email" and i.value == "attacker@evil-c2.top" for i in sr.iocs)
+
+
+def test_email_regex_does_not_catastrophically_backtrack_on_large_binary(tmp_path):
+    """Live-verified real bug: a 50,000-byte contiguous run of plain word
+    characters (no '@' anywhere) took ~10s against the original
+    unbounded `[\\w.+-]+@[\\w-]+\\.[\\w.-]+` email regex -- O(n^2)
+    backtracking, not a fixed cost. A real 3MB malware sample containing
+    a large ASCII-heavy section hung the triage stage for many minutes
+    (observed live during calibration; the fix must keep any single
+    StaticFeaturesTool.run() call well under a second even on an
+    adversarial multi-hundred-KB run of matching bytes)."""
+    data = b"MZ" + b"a" * 300_000
+    t0 = time.time()
+    StaticFeaturesTool().run(_state_for(tmp_path, data))
+    assert time.time() - t0 < 2.0
+
+
+def test_domain_regex_does_not_catastrophically_backtrack_on_large_binary(tmp_path):
+    """Same nested-quantifier shape as the email regex
+    (`(?:[a-z0-9-]+\\.)+...`) -- not yet observed to hang on real data,
+    but structurally the same risk, so fixed proactively rather than
+    waiting for a second live incident."""
+    data = b"MZ" + (b"a-" * 150_000)
+    t0 = time.time()
+    StaticFeaturesTool().run(_state_for(tmp_path, data))
+    assert time.time() - t0 < 2.0
