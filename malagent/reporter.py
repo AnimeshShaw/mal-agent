@@ -67,6 +67,32 @@ def _high_signal_categories(state: AnalysisState, grounded: list[Finding]) -> se
     return categories
 
 
+def _is_validly_signed(grounded: list[Finding], state: AnalysisState) -> bool:
+    """A valid Authenticode signature is corroborating context, never a
+    trust shortcut (AuthenticodeTool's own docstring) -- stolen/abused
+    code-signing certs are a real attack vector, so this must never
+    single-handedly clear the gate. But live-verified with gemma4:12b:
+    on real Windows admin LOLBins (schtasks.exe, powershell.exe,
+    wmic.exe), the LLM correctly reasoned from this exact evidence to
+    'benign', explicitly citing the Microsoft signature as outweighing
+    the borderline capability evidence, while the deterministic gate
+    scored 'malicious' 0.9 -- because AuthenticodeTool's finding is
+    severity='info' and _high_signal_categories() only counts medium+
+    findings, making a valid signature structurally inert to the score
+    despite the tool's own docstring calling it "corroborating context".
+    Raising the bar by one category (not a short-circuit) closes that
+    gap: a forged/stolen signature still can't buy immunity, sufficiently
+    broad capability evidence can still override it."""
+    for f in grounded:
+        if f.category != "capability" or "valid Authenticode signature" not in f.claim:
+            continue
+        for eid in f.evidence:
+            if any(e.evidence_id == eid and e.locator == "authenticode:status"
+                  for e in state.evidence):
+                return True
+    return False
+
+
 def build_verdict(state: AnalysisState) -> Verdict:
     grounded = [f for f in state.findings if f.grounded]
     techniques = sorted({t for f in state.findings for t in f.attack_techniques})
@@ -88,7 +114,9 @@ def build_verdict(state: AnalysisState) -> Verdict:
 
     score = sum(_SEV_W[f.severity] * f.confidence for f in grounded)
     categories = _high_signal_categories(state, grounded)
-    corroborated = len(categories) >= _MIN_HIGH_SIGNAL_CATEGORIES
+    required_categories = _MIN_HIGH_SIGNAL_CATEGORIES + (
+        1 if _is_validly_signed(grounded, state) else 0)
+    corroborated = len(categories) >= required_categories
 
     # Coverage: did we do enough deterministic analysis to trust a benign
     # call? This must NOT depend on whether an LLM happened to respond --
