@@ -162,10 +162,15 @@ See `tests/` for the behavior each tool adapter is expected to guarantee
    fire, since they indicate the same underlying phenomenon) and
    `ioc_reputation` (a local blocklist match from `IocReputationTool`). A
    verdict of `suspicious`/`malicious` additionally requires matches
-   spanning **≥3 distinct** such categories — a handful of matches in just
-   one or two categories (individually false-positive-prone: e.g.
-   anti-debugging checks are also common in legitimate DRM/licensing
-   code) isn't enough to convict alone.
+   spanning **≥3 distinct** such categories (**≥4** if the sample carries
+   a valid Authenticode signature — verified live via a gemma4:12b
+   comparison that a signed binary gets, and deserves, one extra category
+   of benefit of the doubt before conviction; never a full trust
+   short-circuit, since stolen/abused signing certs are a real attack
+   vector) — a handful of matches in just one or two categories
+   (individually false-positive-prone: e.g. anti-debugging checks are
+   also common in legitimate DRM/licensing code) isn't enough to convict
+   alone.
 4. No corroboration but some attacker-relevant signal → `undetermined`
    (honest "can't tell", not a guess).
 5. Grounded findings exist and the deep stages actually ran, but no
