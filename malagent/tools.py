@@ -53,6 +53,21 @@ _SUSPICIOUS_STR = [b"cmd.exe", b"powershell", b"CreateRemoteThread", b"VirtualAl
                    b"WScript.Shell", b"-enc", b"base64", b"socket", b"WinExec"]
 
 
+def _looks_like_namespace(val: str) -> bool:
+    """.NET/managed-code namespace strings (System.Net, System.IO,
+    Microsoft.Win32, ...) are ordinary assembly metadata, not domains --
+    but the domain regex's TLD list includes 'net'/'io', so they collide.
+    Real C2 domains embedded in malware strings are essentially always
+    lowercase; namespace identifiers are PascalCase per segment by
+    convention. Live-verified this collision is real, not theoretical:
+    'System.Net' matches an actual entry in a real threat-intel blocklist
+    (hagezi) that IocReputationTool then scored as a match -- filtering
+    on case preserves detection of the genuine lowercase domain
+    ('system.net') while dropping the PascalCase metadata artifact."""
+    labels = val.split(".")
+    return all(label[:1].isupper() for label in labels if label)
+
+
 def _shannon(data: bytes) -> float:
     if not data:
         return 0.0
@@ -135,6 +150,8 @@ class StaticFeaturesTool:
             for m in rx.findall(data)[:50]:
                 val = m.decode("latin1")
                 if (kind, val) in seen:
+                    continue
+                if kind == "domain" and _looks_like_namespace(val):
                     continue
                 seen.add((kind, val))
                 ev = EvidenceRecord(evidence_id=_id("ev", input_ref, kind, val),
