@@ -41,8 +41,20 @@ def triage_agent(state: AnalysisState) -> AnalysisState:
 def determine_escalation_trigger(state: AnalysisState) -> Optional[str]:
     """Decide which escalation trigger (if any) the current triage evidence fires.
     Mirrors EgressPolicy.escalation_triggers's vocabulary: low_confidence,
-    security_critical, ambiguous_decompile. Returns None if nothing fires."""
-    grounded = [f for f in state.findings if f.evidence]
+    security_critical, ambiguous_decompile. Returns None if nothing fires.
+
+    Excludes behavioral_analyst's own narrative Finding: it hardcodes
+    confidence=0.5 (severity="info", deliberately kept out of verdict
+    scoring), but this function is also called by verifier_critic right
+    after that narrative is added to state.findings. Without this
+    exclusion, the narrative's own placeholder confidence value
+    unconditionally self-triggers "low_confidence" for its own
+    fact-check, regardless of how solid the underlying evidence actually
+    is -- live-verified this meant verifier_critic ALWAYS attempted
+    escalation and failed closed to "ungrounded" whenever cloud wasn't
+    configured, even when the local model would say SUPPORTED."""
+    grounded = [f for f in state.findings
+               if f.evidence and f.source_stage != "behavioral_analyst"]
     if not grounded:
         return "ambiguous_decompile"     # nothing concrete for the local model to reason over
     if any(f.severity in ("high", "critical") for f in grounded):

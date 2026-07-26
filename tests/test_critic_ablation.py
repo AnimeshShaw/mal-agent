@@ -5,8 +5,9 @@ benign/malicious evaluation harness, every fixture here is hand-written
 with known ground truth about whether the narrative overclaims beyond its
 cited evidence."""
 from __future__ import annotations
+from malagent.agents import determine_escalation_trigger
 from malagent.critic_ablation import (
-    DEFAULT_CASES, AblationCase, AblationReport, format_report, run_ablation,
+    DEFAULT_CASES, AblationCase, AblationReport, _build_state, format_report, run_ablation,
 )
 
 
@@ -95,3 +96,24 @@ def test_default_cases_bundle_has_both_classes_represented():
     assert any(not c.overclaims for c in DEFAULT_CASES)
     assert len(DEFAULT_CASES) >= 6
     assert len({c.case_id for c in DEFAULT_CASES}) == len(DEFAULT_CASES)
+
+
+def test_ablation_state_does_not_self_trigger_escalation():
+    """Real bug, live-verified: _build_state() only ever adds the
+    behavioral_analyst narrative Finding itself (confidence=0.5) plus
+    bare EvidenceRecords with no backing Finding. Even after excluding
+    behavioral_analyst findings from determine_escalation_trigger's scan
+    (the fix for the same bug in real pipeline runs), an ablation state
+    with ONLY the narrative Finding still ends up with an empty
+    'grounded' list, which unconditionally triggers 'ambiguous_decompile'
+    -- so `mal-agent ablate-critic --local-model X` would ALWAYS escalate
+    and, with no cloud provider configured, ALWAYS fail closed to
+    'ungrounded' before ever asking the local model anything. This is
+    why gemma4:12b and qwen2.5-coder:7b produced byte-identical ablation
+    results earlier in the project's history -- neither was ever
+    actually invoked."""
+    for case in DEFAULT_CASES:
+        state = _build_state(case)
+        assert determine_escalation_trigger(state) is None, (
+            f"case {case.case_id!r} unexpectedly triggers escalation -- "
+            "ablate-critic would never reach the local model for it")

@@ -68,7 +68,16 @@ def _synthetic_sample() -> Sample:
 def _build_state(case: AblationCase) -> AnalysisState:
     """A minimal AnalysisState carrying exactly one behavioral_analyst
     Finding (the narrative under test) and the EvidenceRecords it cites --
-    everything verifier_critic actually reads."""
+    everything verifier_critic actually reads. Also adds one synthetic
+    "solid" triage Finding backing that same evidence: real pipeline runs
+    always have capa/PE-style findings (confidence 0.7+) alongside the
+    narrative, and determine_escalation_trigger excludes the narrative's
+    own confidence from its scan (see agents.py) -- but without at least
+    one other grounded Finding here, the scan sees an empty list and
+    fires 'ambiguous_decompile' anyway, still escalating and still
+    failing closed with no cloud provider configured. Confirmed live:
+    without this, `ablate-critic --local-model X` never actually reaches
+    the local model for any case."""
     state = AnalysisState(run_id=f"ablation-{case.case_id}", sample=_synthetic_sample())
     evidence_ids = []
     for i, excerpt in enumerate(case.evidence_excerpts):
@@ -77,6 +86,10 @@ def _build_state(case: AblationCase) -> AnalysisState:
             evidence_id=eid, artifact_id="synthetic",
             locator=f"synthetic:{case.case_id}:{i}", excerpt=excerpt, trust="tool"))
         evidence_ids.append(eid)
+    state.findings.append(Finding(
+        finding_id=f"triage_{case.case_id}", claim="synthetic backing triage evidence",
+        category="capability", severity="medium", confidence=0.9,
+        evidence=evidence_ids, source_stage="triage", grounded=True))
     state.findings.append(Finding(
         finding_id=f"behavioral_{case.case_id}", claim=case.narrative,
         category="behavior", severity="info", confidence=0.5,

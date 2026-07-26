@@ -45,6 +45,28 @@ def test_solid_grounded_findings_trigger_nothing():
     assert determine_escalation_trigger(state) is None
 
 
+def test_behavioral_analyst_narrative_confidence_does_not_self_trigger_escalation():
+    """behavioral_analyst hardcodes confidence=0.5 for its own narrative
+    Finding (severity='info', deliberately excluded from verdict scoring
+    -- see its own docstring). That finding lives in state.findings by
+    the time verifier_critic runs right after it, and
+    determine_escalation_trigger scans ALL grounded findings for
+    confidence < 0.6. Without excluding it, the narrative's own
+    placeholder confidence value unconditionally self-triggers
+    escalation for its own fact-check, regardless of how solid the
+    underlying evidence actually is. Live-verified this means
+    verifier_critic ALWAYS attempts escalation in every real
+    --enable-models run and fails closed to 'ungrounded' whenever cloud
+    isn't configured -- even when the local model would say SUPPORTED."""
+    solid = Finding(finding_id="f1", claim="x", category="capability",
+                    severity="medium", confidence=0.9, evidence=["ev1"])
+    narrative = Finding(finding_id="f2", claim="narrative", category="behavior",
+                        severity="info", confidence=0.5, evidence=["ev1"],
+                        source_stage="behavioral_analyst")
+    state = _state(findings=[solid, narrative])
+    assert determine_escalation_trigger(state) is None
+
+
 class _FakeResponse:
     def __init__(self, text="ok"):
         self.text = text
