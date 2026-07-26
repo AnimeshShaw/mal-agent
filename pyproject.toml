@@ -27,6 +27,7 @@ Issues = "https://github.com/AnimeshShaw/mal-agent/issues"
 [project.optional-dependencies]
 full = [
   "pefile>=2023.2.7",
+  "pyelftools>=0.31",
   "sqlalchemy>=2.0",
   "psycopg2-binary>=2.9",
   "langgraph>=0.2",
