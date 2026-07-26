@@ -174,6 +174,44 @@ class StaticFeaturesTool:
                                  f"wide_strings={len(wide_strings)}, iocs={len(iocs)}")
 
 
+_IMAGE_MAGIC = (
+    b"\x89PNG\r\n\x1a\n",   # PNG (Vista+ icons embed these for larger sizes)
+    b"\xff\xd8\xff",        # JPEG
+    b"GIF87a", b"GIF89a",   # GIF
+)
+
+
+def _looks_like_compressed_image(blob: bytes) -> bool:
+    return blob.startswith(_IMAGE_MAGIC)
+
+
+def _iter_pe_resource_blobs(pe):
+    """Walks pefile's 3-level resource tree (type -> name -> language) and
+    yields each leaf resource's raw bytes. Defensive at every level:
+    a malformed or partial resource directory (missing .directory,
+    unreadable data) should degrade to "found nothing here", never crash
+    triage -- resources are optional PE structure, not something every
+    real-world sample has intact."""
+    root = getattr(pe, "DIRECTORY_ENTRY_RESOURCE", None)
+    if root is None:
+        return
+    for type_entry in getattr(root, "entries", []):
+        name_entries = getattr(getattr(type_entry, "directory", None), "entries", [])
+        for name_entry in name_entries:
+            lang_entries = getattr(getattr(name_entry, "directory", None), "entries", [])
+            for leaf in lang_entries:
+                data = getattr(leaf, "data", None)
+                struct = getattr(data, "struct", None) if data else None
+                if struct is None:
+                    continue
+                try:
+                    blob = pe.get_data(struct.OffsetToData, struct.Size)
+                except Exception:
+                    continue
+                if blob:
+                    yield blob
+
+
 class PEHeaderTool:
     """PE structure via pefile when available; degrades gracefully otherwise."""
     name = "pe_header"
@@ -296,6 +334,52 @@ class PEHeaderTool:
                                      artifact_id=art.artifact_id, locator="rich_header:checksum",
                                      excerpt=hex(checksum), trust="tool")
             evidence.append(rich_ev)
+
+        # Resource (.rsrc) parsing: a common way to hide a payload is to
+        # embed it as a PE resource -- either a full second PE (dropper/
+        # loader pattern, unambiguous once you look) or a high-entropy
+        # (packed/encrypted) blob invisible to whole-file/section entropy
+        # if the rest of the binary is normal. Resources sit in their own
+        # 3-level tree (type -> name -> language); walk defensively since
+        # a malformed/partial resource directory shouldn't crash triage.
+        for i, blob in enumerate(_iter_pe_resource_blobs(pe)):
+            if len(blob) < 64:
+                continue  # icons/version-info fragments: too small to be meaningful
+            if _looks_like_compressed_image(blob):
+                # Real false positive, found live on notepad.exe/explorer.exe:
+                # Vista+ Windows icons embed PNG for larger sizes, and PNG's
+                # own internal (DEFLATE) compression gives it entropy
+                # ~7.9-8.0 -- indistinguishable from a packed/encrypted blob
+                # by entropy alone. A recognizable image-format magic header
+                # is an innocent, structural explanation for that entropy.
+                continue
+            if blob[:2] == b"MZ":
+                pe_ev = EvidenceRecord(evidence_id=_id("ev", input_ref, "rsrc_pe", str(i)),
+                                       artifact_id=art.artifact_id,
+                                       locator=f"resource:{i}:embedded_pe", excerpt="MZ",
+                                       trust="tool")
+                evidence.append(pe_ev)
+                findings.append(Finding(
+                    finding_id=_id("f", input_ref, "rsrc_pe", str(i)),
+                    claim=f"Resource #{i} contains an embedded PE (MZ header) -- a common "
+                          f"dropper/loader pattern for hiding a second-stage payload.",
+                    category="capability", severity="high", confidence=0.7,
+                    evidence=[pe_ev.evidence_id], source_stage="triage"))
+                continue
+            blob_entropy = _shannon(blob)
+            if blob_entropy > 7.2:
+                ent_ev = EvidenceRecord(evidence_id=_id("ev", input_ref, "rsrc_entropy", str(i)),
+                                        artifact_id=art.artifact_id,
+                                        locator=f"resource:{i}:entropy",
+                                        excerpt=f"{blob_entropy:.2f}", trust="tool")
+                evidence.append(ent_ev)
+                findings.append(Finding(
+                    finding_id=_id("f", input_ref, "rsrc_entropy", str(i)),
+                    claim=f"High-entropy resource blob #{i} ({blob_entropy:.2f}/8.0, "
+                          f"{len(blob)} bytes) suggests a packed or encrypted payload "
+                          f"hidden in a PE resource.",
+                    category="capability", severity="medium", confidence=0.55,
+                    evidence=[ent_ev.evidence_id], source_stage="triage"))
 
         return StageResult(stage="triage", status="ok", findings=findings,
                            artifacts=[art], evidence=evidence, iocs=iocs,
