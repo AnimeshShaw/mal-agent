@@ -140,7 +140,7 @@ agent by giving it a severity dial, this test catches it.
 | `MachoTool` | triage | Header identification (cputype, filetype) -- informational only | Deliberately no segment/import heuristics: no real Mach-O sample available in dev to verify them against, unlike `ElfTool` |
 | `AuthenticodeTool` | triage | Signer identity (informational — *not* a trust short-circuit) | Windows-only, `Get-AuthenticodeSignature` via env-var-passed subprocess |
 | `CapaTool` | triage | Capability + ATT&CK + MBC (Malware Behavior Catalog) detection | Real capa-rules corpus; namespace-aware severity (see §6) |
-| `GhidraTool` | static | Per-function decompilation of capa-ranked functions | `pyghidra` in-process (not subprocess+Jython — Ghidra ≥11 doesn't bundle Jython) |
+| `GhidraTool` | static | Per-function decompilation of capa-ranked functions + caller/callee call-graph edges between them | `pyghidra` in-process (not subprocess+Jython — Ghidra ≥11 doesn't bundle Jython) |
 | dynamic sandbox | dynamic | — | Contract-present, intentionally stubbed (v1 is static-only); reports itself as `skipped`, never silently `benign` |
 
 See `tests/` for the behavior each tool adapter is expected to guarantee
