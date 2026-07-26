@@ -17,7 +17,19 @@ def _maybe_router(state: AnalysisState, audit, local_name: str, local_model: str
     if not enable_models:
         return None
     local = build_provider(local_name, local_model)
-    esc = build_provider(escalation_name, escalation_model) if escalation_name else None
+    # Only build an escalation provider when policy actually allows cloud --
+    # ModelRouter.analyze() checks `self.escalation is not None` before
+    # consulting the policy, so a non-None escalation provider still takes
+    # the cloud-or-fail-closed branch on a triggered case even when
+    # policy.allow_cloud is False, never falling back to the local
+    # provider that's sitting right there. A user passing --no-cloud
+    # (expecting pure local/offline operation) got the same degraded
+    # "cloud egress blocked" result as someone with no credentials at
+    # all -- live-verified. Not building the provider at all lets
+    # ModelRouter's `self.escalation is None` check correctly skip
+    # straight to local for every call.
+    esc = (build_provider(escalation_name, escalation_model)
+          if escalation_name and state.policy.allow_cloud else None)
     return ModelRouter(state, local=local, escalation=esc, audit=audit)
 
 

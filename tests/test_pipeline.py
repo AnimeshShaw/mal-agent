@@ -1,8 +1,8 @@
 """End-to-end skeleton test on a SAFE synthetic binary (no model, no cloud)."""
 import struct
 from pathlib import Path
-from malagent.pipeline import analyze
-from malagent.contracts import Provenance
+from malagent.pipeline import _maybe_router, analyze
+from malagent.contracts import AnalysisState, EgressPolicy, Provenance, Sample, StepBudget
 
 
 def _make_fake_pe(tmp: Path) -> str:
@@ -45,3 +45,42 @@ def test_end_to_end(tmp_path):
     assert "MAL-AGENT DETAILED ANALYSIS REPORT" in report_txt
     assert "APPENDIX A" in report_txt
     assert "END OF REPORT" in report_txt
+
+
+def _synthetic_state(allow_cloud: bool) -> AnalysisState:
+    sample = Sample(sha256="a" * 64, md5="b" * 32, path="/tmp/x.malz",
+                    file_type="PE", size=10, provenance=Provenance())
+    return AnalysisState(run_id="r1", sample=sample,
+                         policy=EgressPolicy(allow_cloud=allow_cloud), budget=StepBudget())
+
+
+def test_no_cloud_policy_means_no_escalation_provider_at_all():
+    """Real bug, live-verified: --no-cloud only ever set policy.allow_cloud
+    -- _maybe_router() built a real escalation provider regardless, and
+    ModelRouter.analyze() checks `self.escalation is not None` BEFORE
+    consulting the policy, so a triggered escalation still took the
+    cloud-or-fail-closed branch and never fell back to the already-
+    configured local provider. A user who explicitly passes --no-cloud
+    (reasonably expecting pure local/offline operation) got the exact
+    same degraded 'local model down and cloud egress blocked' result as
+    someone with no cloud credentials at all, on every case that would
+    otherwise escalate. Fixed by only constructing the escalation
+    provider when policy.allow_cloud is True."""
+    state = _synthetic_state(allow_cloud=False)
+    router = _maybe_router(state, audit=None, local_name="ollama", local_model="qwen2.5-coder:7b",
+                           escalation_name="anthropic", escalation_model="claude-sonnet-4-6",
+                           enable_models=True)
+    assert router is not None
+    assert router.escalation is None
+
+
+def test_cloud_allowed_policy_still_builds_escalation_provider():
+    """Baseline: normal behavior (cloud allowed by policy) must be
+    unaffected -- an escalation provider should still be constructed so
+    real escalation can work when the operator wants it."""
+    state = _synthetic_state(allow_cloud=True)
+    router = _maybe_router(state, audit=None, local_name="ollama", local_model="qwen2.5-coder:7b",
+                           escalation_name="anthropic", escalation_model="claude-sonnet-4-6",
+                           enable_models=True)
+    assert router is not None
+    assert router.escalation is not None

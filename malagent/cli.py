@@ -98,7 +98,8 @@ def main(argv=None):
         dummy_state = AnalysisState(run_id="suggest-verdict", sample=dummy_sample,
                                     policy=policy, budget=StepBudget())
         local = build_provider("ollama", vargs.local_model)
-        esc = build_provider(vargs.escalation_provider) if vargs.escalation_provider else None
+        esc = (build_provider(vargs.escalation_provider)
+              if vargs.escalation_provider and policy.allow_cloud else None)
         router = ModelRouter(dummy_state, local=local, escalation=esc)
 
         samples = evaluation.load_labeled_samples(vargs.manifest)
@@ -137,7 +138,8 @@ def main(argv=None):
             state = AnalysisState(run_id="ablate-critic", sample=dummy_sample,
                                   policy=policy, budget=StepBudget())
             local = build_provider("ollama", aargs.local_model)
-            esc = build_provider(aargs.escalation_provider) if aargs.escalation_provider else None
+            esc = (build_provider(aargs.escalation_provider)
+                  if aargs.escalation_provider and policy.allow_cloud else None)
             router = ModelRouter(state, local=local, escalation=esc)
 
         report = critic_ablation.run_ablation(critic_ablation.DEFAULT_CASES, router=router)
