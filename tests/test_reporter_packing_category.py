@@ -107,6 +107,32 @@ def test_multiple_packing_signals_still_count_as_one_category_not_several():
     assert v.verdict not in ("suspicious", "malicious")
 
 
+def test_die_packer_detection_also_counts_as_packing_category():
+    """DieTool's packer/protector detection (docs/TODO.md Phase 2) is a
+    DIFFERENT signal source but the SAME underlying phenomenon as entropy/
+    overlay-based packing detection -- must join the existing 'packing'
+    category, not create an independent one (else a single packed file
+    could inflate corroboration just by having 2 tools detect the same
+    fact)."""
+    die_f, die_ev = _packing_finding("f_die", "ev_die", "die:packer")
+    findings = [die_f, _capa_finding("f_aa", "ev_aa"), _capa_finding("f_lc", "ev_lc")]
+    evidence = [die_ev, _capa_evidence("ev_aa", "anti-analysis"),
+                _capa_evidence("ev_lc", "load-code")]
+    state = _state_with(findings, evidence)
+    v = build_verdict(state)
+    assert v.verdict == "suspicious"
+
+
+def test_die_packer_plus_entropy_signal_still_count_as_one_category():
+    die_f, die_ev = _packing_finding("f_die", "ev_die", "die:packer")
+    entropy_f, entropy_ev = _packing_finding("f_ent", "ev_ent", "file:entropy")
+    findings = [die_f, entropy_f]
+    evidence = [die_ev, entropy_ev]
+    state = _state_with(findings, evidence)
+    v = build_verdict(state)
+    assert v.verdict not in ("suspicious", "malicious")
+
+
 def test_info_severity_packing_finding_does_not_count():
     """Mirrors the existing capa-demotion-respecting test: only medium+
     severity packing findings count, same trust-the-severity-decision rule

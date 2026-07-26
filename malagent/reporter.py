@@ -28,11 +28,12 @@ def _is_packing_locator(locator: str) -> bool:
     evaluation: a real AgentTesla sample had high file+section entropy but
     only 2 distinct high-signal capa categories, landing in 'undetermined'
     despite the packing signal effectively being a third one. File entropy,
-    per-section entropy, and overlay detection all indicate the SAME
-    underlying phenomenon, so they map to one 'packing' category, not one
-    each -- a single packed sample shouldn't inflate the category count on
-    its own evidence alone."""
-    return locator == "file:entropy" or locator == "overlay:size" or (
+    per-section entropy, overlay detection, and DieTool's packer/protector
+    identification all indicate the SAME underlying phenomenon, so they
+    map to one 'packing' category, not one each -- a single packed sample
+    shouldn't inflate the category count just by having multiple tools
+    detect the same fact."""
+    return locator == "file:entropy" or locator == "overlay:size" or locator == "die:packer" or (
         locator.startswith("section:") and locator.endswith(":entropy"))
 
 

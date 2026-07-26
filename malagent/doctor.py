@@ -59,6 +59,14 @@ def check_floss() -> CheckResult:
     return CheckResult("floss", "PASS", "on PATH")
 
 
+def check_die() -> CheckResult:
+    if not shutil.which("diec"):
+        return CheckResult("die", "WARN",
+                           "'diec' not on PATH -- packer/compiler identification disabled "
+                           "(install from https://github.com/horsicq/DIE-engine)")
+    return CheckResult("die", "PASS", "on PATH")
+
+
 def check_ghidra() -> CheckResult:
     from .ghidra_tool import find_headless_ghidra
     home = os.getenv("GHIDRA_HOME")
@@ -200,6 +208,7 @@ def run_checks() -> list[CheckResult]:
         check_known_good_allowlist(),
         check_ioc_reputation(),
         check_yara_match(),
+        check_die(),
     ]
 
 

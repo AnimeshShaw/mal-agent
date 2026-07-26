@@ -234,13 +234,13 @@ def test_yara_match_configured_but_invalid_syntax_fails(monkeypatch, tmp_path):
 
 # ---------- run_checks / format_report / exit_code ----------
 
-def test_run_checks_returns_all_eleven_checks():
+def test_run_checks_returns_all_twelve_checks():
     results = doctor.run_checks()
-    assert len(results) == 11
+    assert len(results) == 12
     assert {r.name for r in results} == {
         "pefile", "capa", "ghidra", "java", "ollama", "floss",
         "cloud_keys", "database", "known_good_allowlist", "ioc_reputation",
-        "yara_match",
+        "yara_match", "die",
     }
 
 
@@ -256,6 +256,21 @@ def test_floss_not_on_path_warns(monkeypatch):
 def test_floss_on_path_passes(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/floss")
     result = doctor.check_floss()
+    assert result.status == "PASS"
+
+
+# ---------- check_die ----------
+
+def test_die_not_on_path_warns(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    result = doctor.check_die()
+    assert result.status == "WARN"
+    assert "not on PATH" in result.detail
+
+
+def test_die_on_path_passes(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/diec")
+    result = doctor.check_die()
     assert result.status == "PASS"
 
 
