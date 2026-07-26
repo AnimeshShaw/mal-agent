@@ -11,7 +11,8 @@ both indicate the same underlying phenomenon (the file is packed/hiding
 data), so they count as ONE 'packing' category, not one each -- otherwise a
 single packed sample could inflate the category count on its own."""
 from __future__ import annotations
-from malagent.contracts import AnalysisState, EvidenceRecord, Finding, Provenance, Sample, StageResult
+from malagent.contracts import (AnalysisState, EvidenceRecord, Finding, Provenance, RawArtifact,
+                                Sample, StageResult)
 from malagent.reporter import build_verdict
 
 
@@ -43,7 +44,12 @@ def _state_with(findings, evidence, deep_ran=True):
     s.findings = findings
     s.evidence = evidence
     if deep_ran:
-        s.stage_results = [StageResult(stage="static", status="ok")]
+        # A real artifact, not a bare "ok" status: deep_ran requires
+        # genuine deterministic tool output (see test_reporter_deep_ran.py),
+        # not just an LLM-narrated static stage reporting "ok".
+        art = RawArtifact(artifact_id="art_ghidra", tool="ghidra", input_ref="a" * 64,
+                          storage_ref="artifact://art_ghidra")
+        s.stage_results = [StageResult(stage="static", status="ok", artifacts=[art])]
     return s
 
 
