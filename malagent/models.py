@@ -5,6 +5,7 @@ If escalation is blocked and local can't resolve, callers mark the result
 UNDETERMINED rather than guessing (fail-closed)."""
 from __future__ import annotations
 import hashlib
+import json
 import os
 from dataclasses import dataclass
 from typing import Optional, Protocol, runtime_checkable
@@ -146,6 +147,8 @@ class ModelRouter:
                 if self.audit:
                     self.audit.log("egress_blocked", provider=self.escalation.name,
                                    reason=reason, prompt_hash=phash)
+                self._maybe_log_prompt_response(system, prompt, self.escalation, "cloud",
+                                                response=None, error=f"egress blocked: {reason}")
                 return None
 
         try:
@@ -154,10 +157,14 @@ class ModelRouter:
             self._record(provider, location, phash, location != "cloud")
             if self.audit:
                 self.audit.log("model_error", provider=provider.name, error=str(e)[:200])
+            self._maybe_log_prompt_response(system, prompt, provider, location,
+                                            response=None, error=str(e)[:500])
             return None
         if location == "cloud":
             self.state.budget.cloud_calls_used += 1
         self._record(provider, location, phash, True)
+        self._maybe_log_prompt_response(system, prompt, provider, location,
+                                        response=text, error=None)
         return ModelResponse(text=text, provider=provider.name, model=provider.model, location=location)
 
     def _record(self, provider, location, phash, egress_allowed):
@@ -167,3 +174,27 @@ class ModelRouter:
         if self.audit:
             self.audit.log("model_call", provider=provider.name, model=provider.model,
                            location=location, prompt_hash=phash, egress_allowed=egress_allowed)
+
+    def _maybe_log_prompt_response(self, system, prompt, provider, location, *,
+                                   response, error):
+        """Opt-in (MAL_AGENT_PROMPT_LOG_PATH, unset by default) full
+        prompt/response logging for prompt-quality iteration -- separate
+        from the audit trail above, which deliberately only ever records
+        a prompt HASH, never the actual content. The logged content
+        includes untrusted, attacker-controllable text extracted from the
+        sample (via wrap_untrusted), so this must stay opt-in, and a
+        logging failure (e.g. an unwritable path) must never break real
+        analysis -- it's a debugging aid, not a critical path."""
+        path = os.getenv("MAL_AGENT_PROMPT_LOG_PATH")
+        if not path:
+            return
+        try:
+            entry = {
+                "timestamp": now().isoformat(),
+                "provider": provider.name, "model": provider.model, "location": location,
+                "system": system, "prompt": prompt, "response": response, "error": error,
+            }
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry) + "\n")
+        except Exception:
+            pass

@@ -226,6 +226,17 @@ commits to the previous record's hash, so `audit.verify()` can detect any
 retroactive edit. This is the chain-of-custody backbone for samples
 received from a SOC/CDC — every stage transition, every model call, every
 egress decision is logged with a timestamp and gets re-verified on demand.
+Every model call's audit entry (and `AnalysisState.model_calls`) records
+only a `prompt_hash` — never the actual prompt or response text, by
+design, since the audit trail is a compliance/integrity record, not a
+debugging log.
+
+Separately, `MAL_AGENT_PROMPT_LOG_PATH` (unset by default, `.env.example`)
+opts into full prompt/response logging for prompt-quality iteration —
+one JSON line per model call, independent of the audit trail above. The
+logged content includes untrusted, attacker-controllable text extracted
+from the sample, so it must stay opt-in and is the operator's
+responsibility to secure like any other sample-derived artifact.
 
 ## 9. What a run produces
 
