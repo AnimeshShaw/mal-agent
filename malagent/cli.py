@@ -148,6 +148,51 @@ def main(argv=None):
             print(f"[out] wrote {aargs.out}")
         return 0
 
+    if argv and argv[0] == "family-attribution":
+        from . import family_attribution as fam
+        fp = argparse.ArgumentParser(
+            prog="mal-agent family-attribution",
+            description="Predict malware family via leave-one-out imphash clustering "
+                        "(+ real capa malware-family rule hits when present) and score "
+                        "macro-F1 against real MalwareBazaar ground truth")
+        fp.add_argument("--dataset-dir", default="dataset/malicious",
+                        help="dir of <sha256>.bin samples (default dataset/malicious)")
+        fp.add_argument("--ground-truth", default="dataset/family_ground_truth.csv",
+                        help="CSV from scripts/fetch_family_ground_truth.py "
+                             "(default dataset/family_ground_truth.csv)")
+        fp.add_argument("--use-capa", action="store_true",
+                        help="also run real capa per sample for malware-family namespace hits. "
+                             "Slow, and empirically contributes nothing for AgentTesla/"
+                             "RedLineStealer/Emotet/Lokibot/Formbook/Remcos/AsyncRAT/njRAT -- "
+                             "capa-rules-9.4.0's malware-family namespace only covers "
+                             "donut-loader/plugx. Off by default.")
+        fp.add_argument("--out", default=None, help="also write the report text to this path")
+        fargs = fp.parse_args(argv[1:])
+
+        if not Path(fargs.dataset_dir).is_dir():
+            print(f"error: {fargs.dataset_dir} not found", file=sys.stderr)
+            return 2
+        if not Path(fargs.ground_truth).exists():
+            print(f"error: {fargs.ground_truth} not found -- run "
+                  f"scripts/fetch_family_ground_truth.py first", file=sys.stderr)
+            return 2
+
+        capa_family_hits_by_hash = None
+        if fargs.use_capa:
+            capa_family_hits_by_hash = {
+                p.stem: fam.compute_capa_family_hits(str(p))
+                for p in sorted(Path(fargs.dataset_dir).glob("*.bin"))
+            }
+
+        report = fam.run_family_attribution(fargs.dataset_dir, fargs.ground_truth,
+                                            capa_family_hits_by_hash=capa_family_hits_by_hash)
+        text = fam.format_family_report(report)
+        print(text)
+        if fargs.out:
+            Path(fargs.out).write_text(text)
+            print(f"[out] wrote {fargs.out}")
+        return 0
+
     p = argparse.ArgumentParser(prog="mal-agent", description="Evidence-grounded static malware analysis")
     p.add_argument("path", help="path to the sample")
     p.add_argument("--source", default="manual", choices=["soc", "cdc", "manual", "dataset"])
