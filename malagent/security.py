@@ -6,7 +6,13 @@ import re
 
 # Patterns commonly used to hijack an LLM reading attacker-controlled strings.
 _INJECTION_PATTERNS = [
-    r"ignore (all|previous|above) instructions",
+    # Bounded {0,3} word-gap, not unbounded/nested -- catches the common
+    # real-world phrasing "ignore all previous instructions" (multiple
+    # qualifier words), which the original single-word alternation missed.
+    # Verified this bound doesn't reintroduce ReDoS-shaped backtracking
+    # (see tests/test_static_features_tool.py for the real bug this
+    # project already found and fixed once in a different regex).
+    r"ignore\s+(?:\w+\s+){0,3}instructions",
     r"you are now",
     r"system prompt",
     r"disregard .* (rules|policy)",
