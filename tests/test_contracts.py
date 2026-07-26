@@ -21,6 +21,7 @@ def test_egress_defaults_fail_closed():
     p = EgressPolicy()
     assert p.allow_raw_bytes_egress is False
     assert p.allow_pseudocode_egress is False
+    assert p.allow_hash_lookup is False
 
 
 def test_finding_requires_category():

@@ -81,6 +81,10 @@ class EgressPolicy(BaseModel):
     allow_cloud: bool = True
     allow_raw_bytes_egress: bool = False
     allow_pseudocode_egress: bool = False
+    # A hash isn't raw bytes or pseudocode, but it's still egress (e.g. a
+    # VirusTotal hash lookup) -- needs its own explicit opt-in, not silent
+    # reuse of allow_raw_bytes_egress/allow_pseudocode_egress (D6).
+    allow_hash_lookup: bool = False
     redact_strings: bool = True
     log_all_egress: bool = True
     escalation_triggers: list[str] = Field(

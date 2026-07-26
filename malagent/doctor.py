@@ -67,6 +67,21 @@ def check_die() -> CheckResult:
     return CheckResult("die", "PASS", "on PATH")
 
 
+def check_virustotal() -> CheckResult:
+    api_key = os.getenv("VIRUSTOTAL_API_KEY")
+    if not api_key:
+        return CheckResult("virustotal", "PASS", "not configured (optional)")
+    try:
+        import requests  # noqa: F401
+    except Exception:
+        return CheckResult("virustotal", "WARN",
+                           "VIRUSTOTAL_API_KEY set but 'requests' not installed "
+                           "(pip install requests)")
+    return CheckResult("virustotal", "PASS",
+                       "API key configured -- remember EgressPolicy.allow_hash_lookup "
+                       "must also be True for lookups to actually run")
+
+
 def check_ghidra() -> CheckResult:
     from .ghidra_tool import find_headless_ghidra
     home = os.getenv("GHIDRA_HOME")
@@ -209,6 +224,7 @@ def run_checks() -> list[CheckResult]:
         check_ioc_reputation(),
         check_yara_match(),
         check_die(),
+        check_virustotal(),
     ]
 
 

@@ -234,14 +234,29 @@ def test_yara_match_configured_but_invalid_syntax_fails(monkeypatch, tmp_path):
 
 # ---------- run_checks / format_report / exit_code ----------
 
-def test_run_checks_returns_all_twelve_checks():
+def test_run_checks_returns_all_thirteen_checks():
     results = doctor.run_checks()
-    assert len(results) == 12
+    assert len(results) == 13
     assert {r.name for r in results} == {
         "pefile", "capa", "ghidra", "java", "ollama", "floss",
         "cloud_keys", "database", "known_good_allowlist", "ioc_reputation",
-        "yara_match", "die",
+        "yara_match", "die", "virustotal",
     }
+
+
+# ---------- check_virustotal ----------
+
+def test_virustotal_not_configured_passes(monkeypatch):
+    monkeypatch.delenv("VIRUSTOTAL_API_KEY", raising=False)
+    result = doctor.check_virustotal()
+    assert result.status == "PASS"
+    assert "not configured" in result.detail
+
+
+def test_virustotal_configured_passes(monkeypatch):
+    monkeypatch.setenv("VIRUSTOTAL_API_KEY", "fake-key")
+    result = doctor.check_virustotal()
+    assert result.status == "PASS"
 
 
 # ---------- check_floss ----------

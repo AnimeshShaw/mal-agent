@@ -106,7 +106,7 @@ class EgressGuard:
         self.policy = policy
 
     def allowed(self, location: str, artifact_class: str) -> tuple[bool, str]:
-        """artifact_class in {raw_bytes, pseudocode, derived}."""
+        """artifact_class in {raw_bytes, pseudocode, hash_lookup, derived}."""
         if location == "local":
             return True, "local processing"
         if not self.policy.allow_cloud:
@@ -115,6 +115,8 @@ class EgressGuard:
             return False, "raw sample bytes may not leave the environment"
         if artifact_class == "pseudocode" and not self.policy.allow_pseudocode_egress:
             return False, "pseudocode egress not permitted for this client"
+        if artifact_class == "hash_lookup" and not self.policy.allow_hash_lookup:
+            return False, "hash lookup egress not permitted for this client"
         return True, "permitted"
 
 

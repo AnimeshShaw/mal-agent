@@ -139,6 +139,17 @@ evaluating or contributing to this project.
   yara-python`, set `YARA_RULES_PATH` to a `.yar`/`.yara` file or a
   directory of them (see `.env.example`). Never bundled — third-party
   rule sets carry their own licenses.
+- **Packer/compiler identification** via [die (Detect It
+  Easy)](https://github.com/horsicq/DIE-engine): install `diec`, no other
+  setup needed. Not live-verified in this project's own development — no
+  `die` installation was available to test against.
+- **VirusTotal hash lookup:** `pip install requests`, set
+  `VIRUSTOTAL_API_KEY`, **and** explicitly set
+  `EgressPolicy.allow_hash_lookup=True` — a hash isn't raw bytes or
+  pseudocode, but it's still egress, so it gets its own opt-in rather than
+  silently reusing an existing one (see `docs/ARCHITECTURE.md` §7). Not
+  live-verified — no API key was available in this project's own
+  development.
 - **Per-function decompilation + call-graph tracing** between decompiled
   functions: `pip install -e ".[ghidra]"` (pyghidra),
   install Ghidra itself, and set `GHIDRA_HOME` to the install root. Ghidra
