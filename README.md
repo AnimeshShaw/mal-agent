@@ -125,8 +125,22 @@ evaluating or contributing to this project.
   signatures — download them and set `CAPA_RULES_PATH` / `CAPA_SIGS_PATH`
   (see `.env.example`), or capa fails with "default embedded rules not
   found".
-- **PE imports + imphash + entropy + Rich header:** `pip install pefile`.
-- **Per-function decompilation:** `pip install -e ".[ghidra]"` (pyghidra),
+- **PE imports + imphash + entropy + Rich header + `.rsrc` resource
+  parsing** (embedded-PE and packed-blob detection in resources):
+  `pip install pefile`.
+- **ELF dynamic-symbol imports + non-standard-section entropy:**
+  `pip install pyelftools` (or `pip install -e ".[full]"`). Mach-O gets
+  header identification only (cputype/filetype) — deliberately no
+  segment/import heuristics; there's no real macOS sample in this
+  project's own dev environment to verify them against the way ELF's
+  were (see `docs/ARCHITECTURE.md` §5).
+- **YARA rule matching** against your own rule set (distinct from this
+  project's own YARA rule *generation*, which always runs): `pip install
+  yara-python`, set `YARA_RULES_PATH` to a `.yar`/`.yara` file or a
+  directory of them (see `.env.example`). Never bundled — third-party
+  rule sets carry their own licenses.
+- **Per-function decompilation + call-graph tracing** between decompiled
+  functions: `pip install -e ".[ghidra]"` (pyghidra),
   install Ghidra itself, and set `GHIDRA_HOME` to the install root. Ghidra
   ≥11 no longer bundles Jython for scripting by default — `pyghidra`
   drives Ghidra's Java API directly from this process instead.

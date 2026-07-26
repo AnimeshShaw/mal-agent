@@ -138,6 +138,7 @@ agent by giving it a severity dial, this test catches it.
 | `PEHeaderTool` | triage | Imports, imphash, per-section entropy, overlay detection, Rich header checksum, `.rsrc` resource parsing (embedded-PE + packed-blob detection) | `pefile`, `fast_load` mode |
 | `ElfTool` | triage | Dynamic-symbol imports (ptrace/execve/dlopen/mprotect etc.), non-standard-section entropy (packing) | `pyelftools`; skips non-ELF samples |
 | `MachoTool` | triage | Header identification (cputype, filetype) -- informational only | Deliberately no segment/import heuristics: no real Mach-O sample available in dev to verify them against, unlike `ElfTool` |
+| `YaraMatchTool` | triage | Matches an operator-supplied YARA rule set against the sample -- distinct from `yara_gen.py`'s always-on rule *generation* | `yara-python`; never bundles rules (third-party licensing); matches count toward the corroboration gate (§6) |
 | `AuthenticodeTool` | triage | Signer identity (informational — *not* a trust short-circuit) | Windows-only, `Get-AuthenticodeSignature` via env-var-passed subprocess |
 | `CapaTool` | triage | Capability + ATT&CK + MBC (Malware Behavior Catalog) detection | Real capa-rules corpus; namespace-aware severity (see §6) |
 | `GhidraTool` | static | Per-function decompilation of capa-ranked functions + caller/callee call-graph edges between them | `pyghidra` in-process (not subprocess+Jython — Ghidra ≥11 doesn't bundle Jython) |

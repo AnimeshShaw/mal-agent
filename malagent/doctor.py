@@ -163,6 +163,30 @@ def check_ioc_reputation() -> CheckResult:
     return CheckResult("ioc_reputation", "PASS", ", ".join(counts) + " loaded")
 
 
+def check_yara_match() -> CheckResult:
+    path = os.getenv("YARA_RULES_PATH")
+    if not path:
+        return CheckResult("yara_match", "PASS", "not configured (optional)")
+    p = Path(path)
+    if not p.exists():
+        return CheckResult("yara_match", "WARN", f"YARA_RULES_PATH={path} set but missing")
+    try:
+        import yara
+    except Exception:
+        return CheckResult("yara_match", "WARN",
+                           f"{path} set but 'yara-python' not installed "
+                           f"(pip install yara-python)")
+    from .yara_match import _compile_rules
+    try:
+        rules = _compile_rules(path)
+    except Exception as e:
+        return CheckResult("yara_match", "FAIL", f"{path} set but failed to compile: {e}")
+    if rules is None:
+        return CheckResult("yara_match", "WARN", f"{path} set but no .yar/.yara files found")
+    count = sum(1 for _ in rules)
+    return CheckResult("yara_match", "PASS", f"{count} rule(s) compiled from {path}")
+
+
 def run_checks() -> list[CheckResult]:
     return [
         check_pefile(),
@@ -175,6 +199,7 @@ def run_checks() -> list[CheckResult]:
         check_database(),
         check_known_good_allowlist(),
         check_ioc_reputation(),
+        check_yara_match(),
     ]
 
 

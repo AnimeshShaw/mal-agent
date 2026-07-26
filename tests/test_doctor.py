@@ -200,14 +200,47 @@ def test_ioc_reputation_configured_but_missing_file_warns(monkeypatch, tmp_path)
     assert result.status == "WARN"
 
 
+# ---------- check_yara_match ----------
+
+def test_yara_match_not_configured_passes(monkeypatch):
+    monkeypatch.delenv("YARA_RULES_PATH", raising=False)
+    result = doctor.check_yara_match()
+    assert result.status == "PASS"
+    assert "not configured" in result.detail
+
+
+def test_yara_match_configured_with_valid_rule_passes(monkeypatch, tmp_path):
+    p = tmp_path / "test.yar"
+    p.write_text('rule x { strings: $a = "y" condition: $a }')
+    monkeypatch.setenv("YARA_RULES_PATH", str(p))
+    result = doctor.check_yara_match()
+    assert result.status == "PASS"
+    assert "1 rule" in result.detail
+
+
+def test_yara_match_configured_but_missing_path_warns(monkeypatch, tmp_path):
+    monkeypatch.setenv("YARA_RULES_PATH", str(tmp_path / "nope.yar"))
+    result = doctor.check_yara_match()
+    assert result.status == "WARN"
+
+
+def test_yara_match_configured_but_invalid_syntax_fails(monkeypatch, tmp_path):
+    p = tmp_path / "bad.yar"
+    p.write_text("not valid yara {{{")
+    monkeypatch.setenv("YARA_RULES_PATH", str(p))
+    result = doctor.check_yara_match()
+    assert result.status == "FAIL"
+
+
 # ---------- run_checks / format_report / exit_code ----------
 
-def test_run_checks_returns_all_ten_checks():
+def test_run_checks_returns_all_eleven_checks():
     results = doctor.run_checks()
-    assert len(results) == 10
+    assert len(results) == 11
     assert {r.name for r in results} == {
         "pefile", "capa", "ghidra", "java", "ollama", "floss",
         "cloud_keys", "database", "known_good_allowlist", "ioc_reputation",
+        "yara_match",
     }
 
 

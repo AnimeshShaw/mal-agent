@@ -13,6 +13,7 @@ from .macho_tool import MachoTool
 from .models import ModelRouter
 from .security import scan_for_injection
 from .tools import StaticFeaturesTool, PEHeaderTool, CapaTool, AuthenticodeTool, _id
+from .yara_match import YaraMatchTool
 
 
 def _merge(state: AnalysisState, sr: StageResult) -> None:
@@ -35,7 +36,7 @@ def triage_agent(state: AnalysisState) -> AnalysisState:
     if is_known_good_match(state):
         return state
     for tool in (StaticFeaturesTool(), IocReputationTool(), PEHeaderTool(), ElfTool(),
-                 MachoTool(), CapaTool(), AuthenticodeTool()):
+                 MachoTool(), CapaTool(), AuthenticodeTool(), YaraMatchTool()):
         _merge(state, tool.run(state))
     return state
 
