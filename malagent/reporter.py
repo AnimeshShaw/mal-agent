@@ -132,12 +132,23 @@ def build_verdict(state: AnalysisState) -> Verdict:
     # sources the corroboration-gate signal itself; it running "ok"
     # (whether it matched 0 or N rules -- CapaTool reports "ok" either way)
     # is real, deterministic coverage on its own, independent of any model.
-    # A model-backed static/dynamic stage succeeding still counts too, and
-    # strengthens the claim further, but is no longer required.
+    #
+    # A second recurrence of the same bug class, found via a live LLM
+    # ablation run: static_agent's own whole-sample-narrative fallback (used
+    # when Ghidra/capa aren't available) reports its OWN
+    # StageResult(stage="static", status="ok", ...) purely because the local
+    # LLM happened to respond, with no artifacts and no evidence backing
+    # it -- an availability signal disguised as a coverage one, same as
+    # before. A model-backed static/dynamic stage's genuine tool output
+    # (GhidraTool's decompiled-function artifact, FlossTool's recovered
+    # evidence) still counts and strengthens the claim, but the bare "ok"
+    # status alone does not: require the StageResult to actually carry
+    # artifacts or evidence, not just an LLM-authored Finding.
     capa_ran = any(sr.stage == "triage" and sr.status == "ok"
                   and any(a.tool == "capa" for a in sr.artifacts)
                   for sr in state.stage_results)
     deep_ran = capa_ran or any(sr.stage in ("static", "dynamic") and sr.status == "ok"
+                              and (sr.artifacts or sr.evidence)
                               for sr in state.stage_results)
 
     if score >= 6 and corroborated:

@@ -72,11 +72,37 @@ def test_capa_skipped_status_does_not_satisfy_deep_ran():
     assert v.verdict == "undetermined"
 
 
-def test_static_ok_without_capa_still_satisfies_deep_ran_backward_compat():
-    """Existing behavior preserved: a real Ghidra/model-backed static stage
-    succeeding is still sufficient on its own, same as before this fix."""
+def test_static_ok_with_real_artifact_still_satisfies_deep_ran():
+    """A genuinely deterministic static-stage tool (Ghidra/FLOSS) that ran
+    and produced a real artifact is still sufficient on its own -- same as
+    before this fix, but now keyed on real tool output existing, not just
+    the bare status string."""
+    art = RawArtifact(artifact_id="art_ghidra", tool="ghidra", input_ref="a" * 64,
+                      storage_ref="artifact://art_ghidra")
     state = AnalysisState(run_id="r1", sample=_sample())
     state.findings = [_info_finding()]
-    state.stage_results = [StageResult(stage="static", status="ok")]
+    state.stage_results = [StageResult(stage="static", status="ok", artifacts=[art])]
     v = build_verdict(state)
     assert v.verdict == "benign"
+
+
+def test_static_ok_from_llm_narrative_alone_does_not_satisfy_deep_ran():
+    """The second recurrence of the exact bug class fixed above, via a
+    different path: static_agent's own whole-sample-narrative fallback
+    (used when Ghidra/capa aren't available) reports its OWN separate
+    StageResult(stage="static", status="ok", findings=[...]) purely because
+    the local LLM happened to respond -- no artifacts, no evidence, nothing
+    deterministic backing it. Live-verified during the M6-parallel LLM
+    ablation study: this let turning the LLM stage on flip a real sample's
+    verdict from undetermined to benign with zero change in deterministic
+    coverage. deep_ran must require real tool output (artifacts or
+    evidence), not just an LLM narrative Finding with no evidence."""
+    state = AnalysisState(run_id="r1", sample=_sample())
+    state.findings = [_info_finding()]
+    state.stage_results = [StageResult(
+        stage="static", status="ok",
+        findings=[Finding(finding_id="static_narr", claim="Likely benign utility.",
+                          category="behavior", severity="info", confidence=0.5,
+                          evidence=[], source_stage="static")])]
+    v = build_verdict(state)
+    assert v.verdict == "undetermined"
