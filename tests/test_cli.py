@@ -268,3 +268,91 @@ def test_suggest_verdict_subcommand_writes_out_file_when_requested(monkeypatch, 
     rc = main(["suggest-verdict", str(manifest), "--out", str(out_file)])
     assert rc == 0
     assert out_file.read_text() == "FAKE SUGGESTION REPORT"
+
+
+class _FakeFamilyReport:
+    def __init__(self):
+        self.scored_samples = 3
+
+
+def test_family_attribution_subcommand_prints_report(monkeypatch, tmp_path, capsys):
+    dataset_dir = tmp_path / "malicious"
+    dataset_dir.mkdir()
+    gt_csv = tmp_path / "gt.csv"
+    gt_csv.write_text("hash,family\naaa,AgentTesla\n")
+
+    import malagent.family_attribution as fam_module
+    monkeypatch.setattr(fam_module, "run_family_attribution",
+                        lambda dataset_dir, ground_truth_csv, **kw: _FakeFamilyReport())
+    monkeypatch.setattr(fam_module, "format_family_report", lambda report: "FAKE FAMILY REPORT TEXT")
+
+    rc = main(["family-attribution", "--dataset-dir", str(dataset_dir), "--ground-truth", str(gt_csv)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "FAKE FAMILY REPORT TEXT" in captured.out
+
+
+def test_family_attribution_subcommand_writes_out_file_when_requested(monkeypatch, tmp_path):
+    dataset_dir = tmp_path / "malicious"
+    dataset_dir.mkdir()
+    gt_csv = tmp_path / "gt.csv"
+    gt_csv.write_text("hash,family\naaa,AgentTesla\n")
+
+    import malagent.family_attribution as fam_module
+    monkeypatch.setattr(fam_module, "run_family_attribution",
+                        lambda dataset_dir, ground_truth_csv, **kw: _FakeFamilyReport())
+    monkeypatch.setattr(fam_module, "format_family_report", lambda report: "FAKE FAMILY REPORT TEXT")
+
+    out_file = tmp_path / "family.txt"
+    rc = main(["family-attribution", "--dataset-dir", str(dataset_dir), "--ground-truth", str(gt_csv),
+              "--out", str(out_file)])
+    assert rc == 0
+    assert out_file.read_text() == "FAKE FAMILY REPORT TEXT"
+
+
+def test_family_attribution_subcommand_errors_on_missing_ground_truth(tmp_path):
+    dataset_dir = tmp_path / "malicious"
+    dataset_dir.mkdir()
+    rc = main(["family-attribution", "--dataset-dir", str(dataset_dir),
+              "--ground-truth", str(tmp_path / "nope.csv")])
+    assert rc == 2
+
+
+def test_family_attribution_subcommand_errors_on_missing_dataset_dir(tmp_path):
+    gt_csv = tmp_path / "gt.csv"
+    gt_csv.write_text("hash,family\naaa,AgentTesla\n")
+    rc = main(["family-attribution", "--dataset-dir", str(tmp_path / "nope"),
+              "--ground-truth", str(gt_csv)])
+    assert rc == 2
+
+
+def test_family_attribution_subcommand_use_capa_flag_gathers_hits_per_sample(monkeypatch, tmp_path):
+    """--use-capa must actually reach compute_capa_family_hits per sample
+    file found under --dataset-dir, and thread the resulting dict through
+    to run_family_attribution -- not just be accepted and dropped."""
+    dataset_dir = tmp_path / "malicious"
+    dataset_dir.mkdir()
+    (dataset_dir / "aaa.bin").write_bytes(b"x")
+    gt_csv = tmp_path / "gt.csv"
+    gt_csv.write_text("hash,family\naaa,AgentTesla\n")
+
+    calls = []
+    captured_kwargs = {}
+
+    import malagent.family_attribution as fam_module
+    monkeypatch.setattr(fam_module, "compute_capa_family_hits",
+                        lambda path, **kw: calls.append(path) or [])
+
+    def _fake_run(dataset_dir_arg, ground_truth_csv_arg, **kw):
+        captured_kwargs.update(kw)
+        return _FakeFamilyReport()
+
+    monkeypatch.setattr(fam_module, "run_family_attribution", _fake_run)
+    monkeypatch.setattr(fam_module, "format_family_report", lambda report: "x")
+
+    rc = main(["family-attribution", "--dataset-dir", str(dataset_dir), "--ground-truth", str(gt_csv),
+              "--use-capa"])
+    assert rc == 0
+    assert len(calls) == 1
+    assert "capa_family_hits_by_hash" in captured_kwargs
+    assert captured_kwargs["capa_family_hits_by_hash"] == {"aaa": []}
