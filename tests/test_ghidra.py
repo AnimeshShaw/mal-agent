@@ -115,7 +115,7 @@ def test_ghidra_tool_passes_ghidra_home_to_decompile(monkeypatch):
 
     def fake_decompile(ghidra_home, sample_path, addrs):
         seen["ghidra_home"] = ghidra_home
-        return {hex(a): "// stub" for a in addrs}
+        return {hex(a): {"pseudocode": "// stub", "callers": [], "callees": []} for a in addrs}
 
     monkeypatch.setattr(tool, "_decompile", fake_decompile)
     state = _state(budget=StepBudget())
@@ -137,7 +137,7 @@ def test_ghidra_tool_honors_step_budget(monkeypatch):
 
     def fake_decompile(headless, sample_path, addrs):
         seen["addrs"] = addrs
-        return {hex(a): "// stub" for a in addrs}
+        return {hex(a): {"pseudocode": "// stub", "callers": [], "callees": []} for a in addrs}
 
     monkeypatch.setattr(tool, "_decompile", fake_decompile)
     state = _state(budget=StepBudget(max_functions_decompiled=2))
@@ -145,3 +145,50 @@ def test_ghidra_tool_honors_step_budget(monkeypatch):
     assert len(seen["addrs"]) == 2
     assert result.status == "ok"
     assert len(result.findings) == 2
+
+
+def test_call_graph_edges_included_in_finding_claim(monkeypatch):
+    """Top-N functions were previously decompiled in isolation -- N
+    unrelated snippets with no visible structural relationship. A caller/
+    callee edge to another function IN THIS SAME ranked set gives the
+    downstream Behavioral Analyst real structural context."""
+    tool = GhidraTool()
+    monkeypatch.setattr("malagent.ghidra_tool.find_headless_ghidra", lambda: "fake-headless")
+    capa_doc = {"rules": {"r": {"meta": {}, "matches": [
+        [{"type": "absolute", "value": a}, {}] for a in (0x1000, 0x2000)
+    ]}}}
+    monkeypatch.setattr(tool, "_load_capa_doc", lambda path: (capa_doc, None))
+
+    def fake_decompile(headless, sample_path, addrs):
+        return {
+            "0x1000": {"pseudocode": "// a", "callers": [], "callees": ["0x2000"]},
+            "0x2000": {"pseudocode": "// b", "callers": ["0x1000"], "callees": []},
+        }
+
+    monkeypatch.setattr(tool, "_decompile", fake_decompile)
+    state = _state(budget=StepBudget())
+    result = tool.run(state)
+    claims_by_addr = {f.finding_id: f.claim for f in result.findings}
+    assert any("Calls: function@0x2000" in c for c in claims_by_addr.values())
+    assert any("Called by: function@0x1000" in c for c in claims_by_addr.values())
+
+
+def test_no_call_graph_edges_produces_plain_claim(monkeypatch):
+    """Baseline: a function with no traced callers/callees in the ranked
+    set keeps the original, simpler claim text -- no dangling "Calls:" /
+    "Called by:" text when there's nothing to report."""
+    tool = GhidraTool()
+    monkeypatch.setattr("malagent.ghidra_tool.find_headless_ghidra", lambda: "fake-headless")
+    capa_doc = {"rules": {"r": {"meta": {}, "matches": [
+        [{"type": "absolute", "value": 0x1000}, {}],
+    ]}}}
+    monkeypatch.setattr(tool, "_load_capa_doc", lambda path: (capa_doc, None))
+
+    def fake_decompile(headless, sample_path, addrs):
+        return {"0x1000": {"pseudocode": "// a", "callers": [], "callees": []}}
+
+    monkeypatch.setattr(tool, "_decompile", fake_decompile)
+    state = _state(budget=StepBudget())
+    result = tool.run(state)
+    assert "Calls:" not in result.findings[0].claim
+    assert "Called by:" not in result.findings[0].claim
