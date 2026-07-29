@@ -227,3 +227,34 @@ def test_rich_header_parse_failure_degrades_gracefully(monkeypatch):
     sr = PEHeaderTool().run(_state())
     assert sr.status == "ok"
     assert [e for e in sr.evidence if e.locator == "rich_header:checksum"] == []
+
+
+def _raise_pe_format_error(*a, **kw):
+    raise pefile.PEFormatError("Unable to read the DOS Header, possibly a truncated file.")
+
+
+def test_non_pe_file_reported_as_skipped_not_error(monkeypatch):
+    """A sample that genuinely isn't a PE (a script, a ZIP-based .NET
+    single-file bundle, etc. fed through the same pipeline) makes pefile
+    raise PEFormatError -- this is an honest 'wrong format for this tool',
+    not something going wrong during real analysis, so it must be
+    reported as 'skipped', not 'error'. Root-caused live: this was the
+    majority cause of 'error'-status triage results in a real efficiency
+    batch run against dataset/malicious/ (several samples there are ZIP/
+    script files, not PE)."""
+    monkeypatch.setattr(pefile, "PE", _raise_pe_format_error)
+    sr = PEHeaderTool().run(_state())
+    assert sr.status == "skipped"
+    assert any("not a PE file" in u for u in sr.unresolved)
+
+
+def test_genuinely_unexpected_pe_parse_exception_still_reported_as_error(monkeypatch):
+    """Any other, non-format exception (a real bug, a corrupted-but-
+    PE-shaped file that trips something unexpected inside pefile) must
+    stay 'error' -- only the specific 'this isn't a PE at all' case
+    downgrades to 'skipped'."""
+    def _raise_other(*a, **kw):
+        raise ValueError("something genuinely unexpected")
+    monkeypatch.setattr(pefile, "PE", _raise_other)
+    sr = PEHeaderTool().run(_state())
+    assert sr.status == "error"
