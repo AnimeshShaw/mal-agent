@@ -7,7 +7,9 @@ don't guess), so the harness reports abstention rates separately instead
 of hiding them inside the confusion matrix."""
 from __future__ import annotations
 from malagent import evaluation
-from malagent.evaluation import EvaluationReport, LabeledSample, evaluate, format_report, load_labeled_samples
+from malagent.contracts import AnalysisState, ModelCall, Provenance, Sample, StageResult
+from malagent.evaluation import (EvaluationReport, LabeledSample, aggregate_efficiency, evaluate,
+                                 format_efficiency_report, format_report, load_labeled_samples)
 
 
 def test_load_labeled_samples_from_csv_manifest(tmp_path):
@@ -143,3 +145,130 @@ def test_format_report_includes_all_key_numbers():
     assert "recall" in text.lower()
     assert "0.8" in text
     assert "undetermined" in text.lower()
+
+
+# ---- efficiency/cost aggregation (docs/EFFICIENCY.md) ----
+
+def _synthetic_state(run_id: str, stage_durations: dict, *, statuses: dict | None = None,
+                     model_calls: list | None = None) -> AnalysisState:
+    sample = Sample(sha256="a" * 64, md5="b" * 32, path="/tmp/x.malz",
+                    file_type="PE", size=1, provenance=Provenance())
+    state = AnalysisState(run_id=run_id, sample=sample)
+    state.stage_durations_ms = dict(stage_durations)
+    for stage, status in (statuses or {}).items():
+        state.stage_results.append(StageResult(stage=stage, status=status))
+    for mc in (model_calls or []):
+        state.model_calls.append(mc)
+    return state
+
+
+def test_aggregate_efficiency_computes_per_stage_timing_stats():
+    states = [
+        _synthetic_state("r1", {"triage": 10.0, "static": 100.0}),
+        _synthetic_state("r2", {"triage": 20.0, "static": 200.0}),
+        _synthetic_state("r3", {"triage": 30.0, "static": 300.0}),
+    ]
+    report = aggregate_efficiency(states)
+
+    triage = report.per_stage["triage"]
+    assert triage.n == 3
+    assert triage.min_ms == 10.0
+    assert triage.median_ms == 20.0
+    assert triage.max_ms == 30.0
+    assert triage.mean_ms == 20.0
+
+    static = report.per_stage["static"]
+    assert static.n == 3
+    assert static.min_ms == 100.0
+    assert static.median_ms == 200.0
+    assert static.max_ms == 300.0
+    assert static.mean_ms == 200.0
+
+
+def test_aggregate_efficiency_computes_total_wallclock_per_run():
+    states = [
+        _synthetic_state("r1", {"triage": 10.0, "static": 90.0}),    # total 100
+        _synthetic_state("r2", {"triage": 20.0, "static": 180.0}),   # total 200
+    ]
+    report = aggregate_efficiency(states)
+    assert report.n_runs == 2
+    assert report.total_wallclock.min_ms == 100.0
+    assert report.total_wallclock.max_ms == 200.0
+    assert report.total_wallclock.mean_ms == 150.0
+    assert report.total_wallclock.median_ms == 150.0
+
+
+def test_aggregate_efficiency_tracks_stage_status_counts():
+    """So the doc can honestly say 'skipped' rather than implying a fast
+    real run when a stage was actually a no-op (e.g. Ghidra unavailable, or
+    the known-good short-circuit)."""
+    states = [
+        _synthetic_state("r1", {"static": 5.0}, statuses={"static": "skipped"}),
+        _synthetic_state("r2", {"static": 5000.0}, statuses={"static": "ok"}),
+    ]
+    report = aggregate_efficiency(states)
+    assert report.per_stage_statuses["static"] == {"skipped": 1, "ok": 1}
+
+
+def test_aggregate_efficiency_reports_cost_not_computed_when_no_cloud_calls():
+    states = [_synthetic_state("r1", {"triage": 10.0}, model_calls=[
+        ModelCall(provider="ollama", model="qwen2.5-coder:7b", location="local",
+                  prompt_hash="x", egress_allowed=True, duration_ms=50.0),
+    ])]
+    report = aggregate_efficiency(states)
+    assert report.model_call_count_local == 1
+    assert report.model_call_count_cloud == 0
+    assert report.cost_computed is False
+    assert report.total_cost_usd is None
+    assert "cloud" in report.cost_note.lower()
+
+
+def test_aggregate_efficiency_reports_cost_not_computed_when_cloud_calls_lack_token_counts():
+    """Even if cloud calls DID happen, ModelCall doesn't currently record
+    token counts, so cost still can't be computed -- this must not be
+    silently reported as $0, which would be a fabricated number."""
+    states = [_synthetic_state("r1", {"triage": 10.0}, model_calls=[
+        ModelCall(provider="anthropic", model="claude-sonnet-4-6", location="cloud",
+                  prompt_hash="x", egress_allowed=True, duration_ms=800.0),
+    ])]
+    report = aggregate_efficiency(states)
+    assert report.model_call_count_cloud == 1
+    assert report.cost_computed is False
+    assert report.total_cost_usd is None
+    assert "token" in report.cost_note.lower()
+
+
+def test_aggregate_efficiency_separates_local_and_cloud_call_durations():
+    states = [_synthetic_state("r1", {}, model_calls=[
+        ModelCall(provider="ollama", model="qwen2.5-coder:7b", location="local",
+                  prompt_hash="a", egress_allowed=True, duration_ms=100.0),
+        ModelCall(provider="ollama", model="qwen2.5-coder:7b", location="local",
+                  prompt_hash="b", egress_allowed=True, duration_ms=300.0),
+        ModelCall(provider="anthropic", model="claude-sonnet-4-6", location="cloud",
+                  prompt_hash="c", egress_allowed=True, duration_ms=900.0),
+    ])]
+    report = aggregate_efficiency(states)
+    assert report.model_call_count_local == 2
+    assert report.model_call_count_cloud == 1
+    assert report.local_call_duration.mean_ms == 200.0
+    assert report.cloud_call_duration.mean_ms == 900.0
+
+
+def test_aggregate_efficiency_handles_empty_states_list():
+    report = aggregate_efficiency([])
+    assert report.n_runs == 0
+    assert report.total_wallclock is None
+    assert report.per_stage == {}
+    assert report.local_call_duration is None
+    assert report.cloud_call_duration is None
+
+
+def test_format_efficiency_report_includes_stage_and_cost_info():
+    states = [_synthetic_state("r1", {"triage": 10.0, "static": 40.0},
+                               statuses={"triage": "ok", "static": "ok"})]
+    report = aggregate_efficiency(states)
+    text = format_efficiency_report(report)
+    assert "triage" in text.lower()
+    assert "static" in text.lower()
+    assert "cost" in text.lower()
+    assert "1" in text  # n_runs somewhere in the output

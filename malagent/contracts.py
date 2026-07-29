@@ -114,6 +114,10 @@ class ModelCall(BaseModel):
     prompt_hash: str
     egress_allowed: bool
     at: datetime = Field(default_factory=now)
+    # Wall-clock time spent in provider.complete(), in milliseconds. None
+    # (not 0) means "not measured" -- e.g. the egress-blocked fail-closed
+    # path never calls the provider at all, so there's nothing to time.
+    duration_ms: Optional[float] = None
 
 
 class AnalysisState(BaseModel):
@@ -127,6 +131,12 @@ class AnalysisState(BaseModel):
     iocs: list[IOC] = Field(default_factory=list)
     model_calls: list[ModelCall] = Field(default_factory=list)
     status: Literal["running", "complete", "error"] = "running"
+    # Wall-clock time per named pipeline stage (triage/static/dynamic/ttp/
+    # behavioral_analyst/verify/verifier_critic), in milliseconds. Populated
+    # by the orchestrator around each stage's agent() call -- not per
+    # StageResult, since a single named stage can append several StageResult
+    # records (e.g. triage_agent runs 5 tools, each appending its own).
+    stage_durations_ms: dict[str, float] = Field(default_factory=dict)
 
 
 class Verdict(BaseModel):

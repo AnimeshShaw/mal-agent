@@ -68,3 +68,29 @@ def test_skips_behavioral_analyst_and_verifier_critic_on_known_good_match(monkey
     assert "known-good" in (ba_results[0].notes or "").lower()
     assert len(vc_results) == 1 and vc_results[0].status == "skipped"
     assert "known-good" in (vc_results[0].notes or "").lower()
+
+
+def test_records_wall_clock_duration_per_named_pipeline_stage(monkeypatch, tmp_path):
+    """Efficiency-table instrumentation: the orchestrator times each named
+    stage's agent() call and records it on state.stage_durations_ms, keyed
+    by the same stage names build_pipeline() uses."""
+    monkeypatch.delenv("KNOWN_GOOD_HASHES_PATH", raising=False)
+    state = run_linear(_state(tmp_path, "a" * 64))
+    expected_stages = {"triage", "static", "dynamic", "ttp",
+                       "behavioral_analyst", "verify", "verifier_critic"}
+    assert expected_stages <= set(state.stage_durations_ms.keys())
+    for stage, duration in state.stage_durations_ms.items():
+        assert isinstance(duration, float)
+        assert duration >= 0.0
+
+
+def test_known_good_skip_records_zero_duration_for_skipped_stages(monkeypatch, tmp_path):
+    """A stage that's skipped outright by the orchestrator's known-good
+    short-circuit never runs its agent() function at all, so 0.0ms is the
+    honest measurement -- not a missing/omitted key."""
+    hashes_file = tmp_path / "hashes.txt"
+    hashes_file.write_text("a" * 64 + "\n")
+    monkeypatch.setenv("KNOWN_GOOD_HASHES_PATH", str(hashes_file))
+    state = run_linear(_state(tmp_path, "a" * 64))
+    for stage in ("static", "dynamic", "behavioral_analyst", "verifier_critic"):
+        assert state.stage_durations_ms[stage] == 0.0
