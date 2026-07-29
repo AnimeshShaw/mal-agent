@@ -28,6 +28,12 @@ def _state(size=10):
     return AnalysisState(run_id="r1", sample=_sample(size))
 
 
+def _state_unknown_format():
+    sample = Sample(sha256="a" * 64, md5="b" * 32, path="/tmp/x.malz",
+                    file_type="unknown", size=10, provenance=Provenance())
+    return AnalysisState(run_id="r1", sample=sample)
+
+
 def _fake_capa_run(rules: dict):
     class _Result:
         stdout = _json.dumps({"rules": rules}).encode()
@@ -258,6 +264,26 @@ def test_attack_tactic_names_captured_alongside_technique_ids(monkeypatch):
     by_claim = {f.claim: f for f in sr.findings}
     assert by_claim["Capability detected: deobfuscate data"].attack_tactics == ["Defense Evasion"]
     assert by_claim["Capability detected: enumerate processes"].attack_tactics == ["Discovery"]
+
+
+def test_unknown_file_format_skips_capa_without_invoking_it(monkeypatch):
+    """A sample whose magic bytes match neither PE/ELF/Mach-O (ingest.py's
+    _detect_type -> 'unknown': a script, a ZIP-based .NET single-file
+    bundle, etc.) is a format capa has no chance of analyzing. Root-caused
+    live: this was the majority cause of 'error'-status triage results in
+    a real efficiency batch against dataset/malicious/ (several samples
+    there genuinely aren't PE files) -- capa was invoked anyway, printed a
+    format error, and JSON-parsing its empty/non-JSON stdout raised a
+    generic exception reported as status='error', which is misleading
+    (nothing went wrong; capa correctly can't handle this input). Skip
+    outright instead -- also saves a wasted subprocess call."""
+    called = []
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: called.append(1))
+    sr = CapaTool().run(_state_unknown_format())
+    assert sr.status == "skipped"
+    assert any("not a supported file format" in u for u in sr.unresolved)
+    assert called == []
 
 
 def test_mbc_objective_names_captured_alongside_behavior_ids(monkeypatch):

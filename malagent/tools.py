@@ -227,6 +227,13 @@ class PEHeaderTool:
         try:
             pe = pefile.PE(state.sample.path, fast_load=True)
             pe.parse_data_directories()
+        except pefile.PEFormatError as e:
+            # Not a real failure: this sample genuinely isn't a PE (a
+            # script, a ZIP-based .NET single-file bundle, etc.) -- an
+            # honest "wrong format for this tool", not something going
+            # wrong during real analysis.
+            return StageResult(stage="triage", status="skipped",
+                               unresolved=[f"PE header analysis skipped: not a PE file ({e})"])
         except Exception as e:
             return StageResult(stage="triage", status="error",
                                unresolved=[f"PE parse failed: {e}"])
@@ -456,6 +463,12 @@ class CapaTool:
                                           f"-- capa's analysis does not scale gracefully to "
                                           f"very large files."],
                                notes="skipped: exceeds capa size cap")
+        if state.sample.file_type not in ("PE", "ELF"):
+            return StageResult(stage="triage", status="skipped",
+                               unresolved=[f"Capability mapping skipped: sample file type "
+                                          f"({state.sample.file_type!r}) is not a supported "
+                                          f"file format for capa."],
+                               notes="skipped: unsupported file format")
         try:
             out = subprocess.run(_capa_command(state.sample.path),
                                  capture_output=True, timeout=300)
