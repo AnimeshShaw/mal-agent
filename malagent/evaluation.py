@@ -13,9 +13,10 @@ reported, so calibration work can see both "how often we're right when we
 commit" and "how often we correctly commit at all"."""
 from __future__ import annotations
 import csv
+import statistics
 from dataclasses import dataclass, field
 from typing import Callable, Literal, Optional
-from .contracts import Provenance
+from .contracts import AnalysisState, Provenance
 
 GroundTruth = Literal["benign", "malicious"]
 _VALID_LABELS = {"benign", "malicious"}
@@ -187,5 +188,152 @@ def format_report(report: EvaluationReport) -> str:
         f"undetermined_rate:          {report.undetermined_rate:.4f}",
         f"undetermined_rate_malicious: {fmt(report.undetermined_rate_malicious)}",
         f"undetermined_rate_benign:    {fmt(report.undetermined_rate_benign)}",
+    ]
+    return "\n".join(lines)
+
+
+# ---- efficiency/cost aggregation (docs/EFFICIENCY.md) ----
+# Real-run timing/cost numbers for the research-paper-style efficiency
+# table referenced in docs/AI-Malware-Analysis-Research-and-Framework.md
+# section 5 ("Efficiency: wall-clock ... token/$ cost; local-vs-cloud
+# trade-off"). Timing is captured by orchestrator.run_linear() (per named
+# pipeline stage, on AnalysisState.stage_durations_ms) and models.ModelRouter
+# (per model call, on ModelCall.duration_ms) -- purely observational
+# instrumentation, never fed back into reporter.build_verdict()'s score.
+#
+# Cost: ModelCall does not currently record token counts (the ModelProvider
+# protocol's complete() returns only text, discarding whatever usage data
+# the underlying SDK response carried). Without token counts there is no
+# real number to report -- guessing one from prompt length would be a
+# fabricated figure, which this project's rules explicitly forbid. So cost
+# is reported as "not computed" with an honest reason whenever cloud calls
+# occurred, and as "$0 (no cloud calls made)" only when that's literally
+# true. Adding token-count capture to the provider protocol is a natural
+# follow-up once cloud escalation is actually exercised against a live API.
+
+@dataclass(frozen=True)
+class TimingStats:
+    n: int
+    min_ms: float
+    median_ms: float
+    max_ms: float
+    mean_ms: float
+
+
+def _timing_stats(values: list) -> Optional[TimingStats]:
+    if not values:
+        return None
+    return TimingStats(n=len(values), min_ms=min(values), median_ms=statistics.median(values),
+                       max_ms=max(values), mean_ms=statistics.mean(values))
+
+
+@dataclass
+class EfficiencyReport:
+    n_runs: int
+    per_stage: dict = field(default_factory=dict)             # stage -> TimingStats
+    per_stage_statuses: dict = field(default_factory=dict)    # stage -> {status: count}
+    total_wallclock: Optional[TimingStats] = None
+    model_call_count_local: int = 0
+    model_call_count_cloud: int = 0
+    local_call_duration: Optional[TimingStats] = None
+    cloud_call_duration: Optional[TimingStats] = None
+    cost_computed: bool = False
+    total_cost_usd: Optional[float] = None
+    cost_note: str = ""
+
+
+def aggregate_efficiency(states: list) -> EfficiencyReport:
+    """Aggregates real per-stage/per-run timing (and, where computable,
+    cost) across a set of completed AnalysisState runs. Synthetic states
+    with hand-set stage_durations_ms/model_calls are exactly as valid an
+    input as ones produced by a real analyze() call -- this function only
+    does arithmetic over whatever AnalysisState it's given."""
+    per_stage_values: dict[str, list] = {}
+    per_stage_statuses: dict[str, dict[str, int]] = {}
+    run_totals: list = []
+    local_durations: list = []
+    cloud_durations: list = []
+    n_local = 0
+    n_cloud = 0
+    any_cloud_calls = False
+
+    for state in states:
+        run_total = 0.0
+        for stage, ms in state.stage_durations_ms.items():
+            per_stage_values.setdefault(stage, []).append(ms)
+            run_total += ms
+        run_totals.append(run_total)
+
+        for sr in state.stage_results:
+            counts = per_stage_statuses.setdefault(sr.stage, {})
+            counts[sr.status] = counts.get(sr.status, 0) + 1
+
+        for mc in state.model_calls:
+            if mc.location == "local":
+                n_local += 1
+                if mc.duration_ms is not None:
+                    local_durations.append(mc.duration_ms)
+            else:
+                n_cloud += 1
+                any_cloud_calls = True
+                if mc.duration_ms is not None:
+                    cloud_durations.append(mc.duration_ms)
+
+    per_stage = {stage: _timing_stats(vals) for stage, vals in per_stage_values.items()}
+
+    if any_cloud_calls:
+        cost_note = (f"cost not computed: {n_cloud} cloud model call(s) were made, but "
+                     f"ModelCall does not currently record token counts, so real "
+                     f"cost cannot be derived without guessing")
+    else:
+        cost_note = ("no cloud model calls were made in these runs (0 cloud ModelCall "
+                     "records) -- cost is $0 for these specific runs; this says nothing "
+                     "about the cost of a hypothetical run that does escalate to cloud")
+
+    return EfficiencyReport(
+        n_runs=len(states),
+        per_stage=per_stage,
+        per_stage_statuses=per_stage_statuses,
+        total_wallclock=_timing_stats(run_totals),
+        model_call_count_local=n_local,
+        model_call_count_cloud=n_cloud,
+        local_call_duration=_timing_stats(local_durations),
+        cloud_call_duration=_timing_stats(cloud_durations),
+        cost_computed=False,
+        total_cost_usd=None,
+        cost_note=cost_note,
+    )
+
+
+def format_efficiency_report(report: EfficiencyReport) -> str:
+    def fmt_stats(s: Optional[TimingStats]) -> str:
+        if s is None:
+            return "n/a (no data)"
+        return (f"n={s.n}  min={s.min_ms:.1f}ms  median={s.median_ms:.1f}ms  "
+               f"max={s.max_ms:.1f}ms  mean={s.mean_ms:.1f}ms")
+
+    lines = [
+        "EFFICIENCY/COST REPORT",
+        "=" * 40,
+        f"Runs aggregated: {report.n_runs}",
+        "-" * 40,
+        "Per-stage wall-clock time:",
+    ]
+    for stage in sorted(report.per_stage):
+        statuses = report.per_stage_statuses.get(stage, {})
+        status_note = ", ".join(f"{k}:{v}" for k, v in sorted(statuses.items()))
+        lines.append(f"  {stage:<20} {fmt_stats(report.per_stage[stage])}"
+                     f"{f'  [{status_note}]' if status_note else ''}")
+    lines += [
+        "-" * 40,
+        f"Total wall-clock per run: {fmt_stats(report.total_wallclock)}",
+        "-" * 40,
+        f"Model calls: local={report.model_call_count_local} "
+        f"cloud={report.model_call_count_cloud}",
+        f"  local call duration:  {fmt_stats(report.local_call_duration)}",
+        f"  cloud call duration:  {fmt_stats(report.cloud_call_duration)}",
+        "-" * 40,
+        f"Cost computed: {report.cost_computed}",
+        f"  {report.cost_note}",
     ]
     return "\n".join(lines)
