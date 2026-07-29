@@ -92,6 +92,14 @@ subprocess+script approach).
 ollama pull qwen2.5-coder:7b
 ```
 
+### die / Detect It Easy (optional — packer/compiler identification)
+
+Install `diec` (the CLI build of [die](https://github.com/horsicq/DIE-engine))
+and put it on `PATH`. No env var needed. **Not live-verified in this
+project's own development** — no `die` installation was available to test
+against; the tool degrades to an honest `skipped` result if `diec` isn't
+found.
+
 ### Postgres (optional — in-memory repository is the supported default)
 
 ```bash

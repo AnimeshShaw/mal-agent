@@ -219,7 +219,7 @@ round-tripping a real run's verdict.
 pip install pytest && pytest -q
 ```
 
-150+ tests, TDD throughout — every feature was built failing-test-first.
+400+ tests, TDD throughout — every feature was built failing-test-first.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow this project
 expects contributions to follow.
 
@@ -227,11 +227,15 @@ expects contributions to follow.
 
 M0 deterministic spine → M1 local model summaries → M2 headless-Ghidra
 decompilation → M3 cloud escalation + egress enforcement → M4 ATT&CK +
-YARA → M4.5 LLM reasoning agents (behavioral narrative + fact-checking
-critic) → mandatory unabridged `.txt` reporting → `doctor` + install
-automation — all shipped and verified live. M5 (dynamic detonation) is
-stubbed by design (v1 is static-only); M6 (calibration against labeled
-malware/benign datasets) is next.
+YARA + retrieval-grounded narrative → M4.5 LLM reasoning agents
+(behavioral narrative + fact-checking critic) → mandatory unabridged
+`.txt` reporting → `doctor` + install automation — all shipped and
+verified live. M5 (dynamic detonation) is stubbed by design (v1 is
+static-only). M6 (calibration against labeled malware/benign datasets)
+has real infrastructure and numbers now — see `docs/TODO.md` for the
+current state of each sub-item (family-attribution macro-F1, deterministic
+calibration bands, adversarial robustness, ablation studies) — full
+formal calibration against a larger held-out set remains open.
 
 ## Documentation
 
