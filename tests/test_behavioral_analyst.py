@@ -39,7 +39,7 @@ class _RecordingRouter:
 
     def analyze(self, *, system, untrusted_label, untrusted_text, escalate=False,
                 artifact_class="derived"):
-        self.calls.append({"label": untrusted_label, "text": untrusted_text,
+        self.calls.append({"system": system, "label": untrusted_label, "text": untrusted_text,
                            "escalate": escalate, "artifact_class": artifact_class})
         return None if self._always_none else self._response
 
@@ -87,6 +87,38 @@ def test_synthesis_prompt_includes_all_finding_claims():
     agent(state)
     assert "XYZ marker" in router.calls[0]["text"]
     assert router.calls[0]["artifact_class"] == "derived"
+
+
+def test_system_prompt_grounded_with_retrieved_tactic_context_when_present():
+    """The M4 'true RAG' milestone: when grounded findings carry real
+    attack_tactics (from capa's own live ATT&CK match), the retrieved real
+    MITRE tactic description is included in the SYSTEM prompt (trusted
+    analyst-supplied grounding), not folded into the untrusted findings
+    blob -- it's our own static reference corpus, not sample-derived
+    content, so it doesn't need injection wrapping."""
+    findings = [
+        Finding(finding_id="f1", claim="Capability detected: deobfuscate data",
+               category="capability", severity="medium", confidence=0.7,
+               evidence=["ev1"], attack_tactics=["Defense Evasion"]),
+    ]
+    state = _state_with_findings(findings)
+    router = _RecordingRouter()
+    agent = make_behavioral_analyst(router=router)
+    agent(state)
+    system = router.calls[0]["system"]
+    assert "Defense Evasion" in system
+    assert "avoid being detected" in system
+
+
+def test_system_prompt_unchanged_shape_when_no_tactics_present():
+    """No attack_tactics on any grounded finding -> no retrieved-context
+    section added; system prompt stays exactly as before this feature."""
+    findings = [_grounded("f1", "Capability detected: read file", ["ev1"])]
+    state = _state_with_findings(findings)
+    router = _RecordingRouter()
+    agent = make_behavioral_analyst(router=router)
+    agent(state)
+    assert "Relevant ATT&CK tactics" not in router.calls[0]["system"]
 
 
 def test_reports_partial_when_model_unavailable():

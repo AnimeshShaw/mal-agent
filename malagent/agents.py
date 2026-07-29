@@ -14,6 +14,7 @@ from .macho_tool import MachoTool
 from .models import ModelRouter
 from .security import scan_for_injection
 from .tools import StaticFeaturesTool, PEHeaderTool, CapaTool, AuthenticodeTool, _id
+from .ttp_retrieval import retrieve_context
 from .virustotal_tool import VirusTotalTool
 from .yara_match import YaraMatchTool
 
@@ -195,13 +196,38 @@ def make_behavioral_analyst(router: Optional[ModelRouter] = None):
         trigger = determine_escalation_trigger(state)
         escalate = trigger is not None and trigger in state.policy.escalation_triggers
 
+        # Retrieval (M4 "true RAG over MBC + ATT&CK"): ground the narrative
+        # in real reference context for whichever tactics/objectives this
+        # sample's own capa matches actually touch, rather than leaving the
+        # LLM to synthesize across bare technique IDs with no shared
+        # context. This is our own static corpus (see ttp_retrieval.py), not
+        # sample-derived content, so it belongs in the trusted system
+        # prompt, not the untrusted findings blob -- it never changes
+        # finding.severity/confidence, only what the narrative can reason
+        # about.
+        retrieval = retrieve_context(grounded_so_far)
+        retrieved_context = ""
+        if retrieval["tactic_descriptions"] or retrieval["mbc_objectives"]:
+            lines = []
+            if retrieval["tactic_descriptions"]:
+                lines.append("Relevant ATT&CK tactics present in this sample:")
+                lines.extend(f"- {d}" for d in retrieval["tactic_descriptions"])
+            if retrieval["mbc_objectives"]:
+                lines.append("Relevant MBC objective categories present: "
+                             + ", ".join(retrieval["mbc_objectives"]))
+            retrieved_context = "\n".join(lines)
+
+        system = ("You are a senior malware analyst. Given this evidence (capabilities, "
+                  "decompiled function summaries, ATT&CK techniques)")
+        if retrieved_context:
+            system += f", and this retrieved reference context:\n{retrieved_context}\n"
+        system += (", write a coherent narrative describing what this sample likely does and "
+                  "why. Be explicit about uncertainty; do not claim more than the evidence "
+                  "supports.")
+
         summary = "\n".join(f"- [{f.category}] {f.claim}" for f in grounded_so_far[:50])
         resp = router.analyze(
-            system=("You are a senior malware analyst. Given this evidence (capabilities, "
-                    "decompiled function summaries, ATT&CK techniques), write a coherent "
-                    "narrative describing what this sample likely does and why. Be explicit "
-                    "about uncertainty; do not claim more than the evidence supports."),
-            untrusted_label="all_findings", untrusted_text=summary,
+            system=system, untrusted_label="all_findings", untrusted_text=summary,
             escalate=escalate, artifact_class="derived")
         if resp is None:
             _merge(state, StageResult(
@@ -215,10 +241,13 @@ def make_behavioral_analyst(router: Optional[ModelRouter] = None):
             finding_id=_id("behavioral", state.run_id), claim=resp.text.strip()[:2000],
             category="behavior", severity="info", confidence=0.5,
             evidence=all_evidence_ids, source_stage="behavioral_analyst")
+        notes = (f"synthesized from {len(grounded_so_far)} findings via "
+                f"{resp.provider}/{resp.location}")
+        if retrieved_context:
+            notes += (f"; retrieved {len(retrieval['tactics'])} ATT&CK tactic(s), "
+                     f"{len(retrieval['mbc_objectives'])} MBC objective(s)")
         _merge(state, StageResult(
-            stage="behavioral_analyst", status="ok", findings=[finding],
-            notes=f"synthesized from {len(grounded_so_far)} findings via "
-                  f"{resp.provider}/{resp.location}"))
+            stage="behavioral_analyst", status="ok", findings=[finding], notes=notes))
         return state
     return behavioral_analyst
 

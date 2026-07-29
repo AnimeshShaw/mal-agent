@@ -37,6 +37,13 @@ never by an LLM's opinion.
   (`tests/test_llm_agents_never_score.py`) feeds it a deliberately
   alarming fake "this is definitely ransomware!!!" response and asserts
   the verdict doesn't move. This is enforced, not just intended.
+- 🔍 **Retrieval-grounded narrative, not bare technique IDs.** capa's real
+  ATT&CK/MBC matches already carry human-readable tactic/objective names,
+  not just codes — `behavioral_analyst` retrieves the real MITRE tactic
+  description for whichever tactics a sample actually touches and grounds
+  its cross-technique narrative in that, instead of synthesizing across
+  opaque IDs with no shared context. Retrieval only shapes the narrative;
+  it never touches the deterministic score (see `docs/ARCHITECTURE.md` §4a).
 - 📋 **Nothing is a black box.** Every run produces an unabridged `.txt`
   report — every finding, every evidence excerpt, the full tamper-evident
   audit log, every model call — alongside the human-readable summary and
