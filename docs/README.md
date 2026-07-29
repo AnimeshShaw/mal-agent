@@ -8,3 +8,7 @@
    (Python-only) and full-automation paths.
 3. **[AI-Malware-Analysis-Research-and-Framework.md](AI-Malware-Analysis-Research-and-Framework.md)**
    — the research framing this project grew out of.
+4. **[ABLATION_LLM.md](ABLATION_LLM.md)** — real, executed ablation:
+   deterministic-only vs. deterministic + LLM, over real samples. Checks
+   the "LLMs narrate, never judge" invariant empirically, not just via
+   unit test.
