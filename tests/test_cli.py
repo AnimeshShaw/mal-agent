@@ -268,3 +268,62 @@ def test_suggest_verdict_subcommand_writes_out_file_when_requested(monkeypatch, 
     rc = main(["suggest-verdict", str(manifest), "--out", str(out_file)])
     assert rc == 0
     assert out_file.read_text() == "FAKE SUGGESTION REPORT"
+
+
+class _FakeLlmAblationReport:
+    def __init__(self):
+        self.results = [1, 2]
+
+
+def test_ablate_llm_subcommand_prints_report(monkeypatch, tmp_path, capsys):
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n")
+
+    import malagent.llm_ablation as ablation_module
+    monkeypatch.setattr(ablation_module, "run_llm_ablation",
+                        lambda samples, **kw: _FakeLlmAblationReport())
+    monkeypatch.setattr(ablation_module, "format_report", lambda report: "FAKE LLM ABLATION REPORT")
+
+    rc = main(["ablate-llm", str(manifest)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "FAKE LLM ABLATION REPORT" in captured.out
+
+
+def test_ablate_llm_subcommand_errors_on_missing_manifest(tmp_path):
+    rc = main(["ablate-llm", str(tmp_path / "nope.csv")])
+    assert rc == 2
+
+
+def test_ablate_llm_subcommand_threads_local_model_through(monkeypatch, tmp_path):
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n")
+
+    captured_kwargs = {}
+    import malagent.llm_ablation as ablation_module
+
+    def _fake_run(samples, **kw):
+        captured_kwargs.update(kw)
+        return _FakeLlmAblationReport()
+
+    monkeypatch.setattr(ablation_module, "run_llm_ablation", _fake_run)
+    monkeypatch.setattr(ablation_module, "format_report", lambda report: "x")
+
+    rc = main(["ablate-llm", str(manifest), "--local-model", "gemma4:12b"])
+    assert rc == 0
+    assert captured_kwargs["local_model"] == "gemma4:12b"
+
+
+def test_ablate_llm_subcommand_writes_out_file_when_requested(monkeypatch, tmp_path):
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n")
+
+    import malagent.llm_ablation as ablation_module
+    monkeypatch.setattr(ablation_module, "run_llm_ablation",
+                        lambda samples, **kw: _FakeLlmAblationReport())
+    monkeypatch.setattr(ablation_module, "format_report", lambda report: "FAKE LLM ABLATION REPORT")
+
+    out_file = tmp_path / "ablation_llm.txt"
+    rc = main(["ablate-llm", str(manifest), "--out", str(out_file)])
+    assert rc == 0
+    assert out_file.read_text() == "FAKE LLM ABLATION REPORT"

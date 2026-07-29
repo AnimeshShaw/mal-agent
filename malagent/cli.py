@@ -148,6 +148,41 @@ def main(argv=None):
             print(f"[out] wrote {aargs.out}")
         return 0
 
+    if argv and argv[0] == "ablate-llm":
+        from . import llm_ablation
+        lp = argparse.ArgumentParser(prog="mal-agent ablate-llm",
+                                     description="Deterministic-only vs. +LLM ablation: runs each "
+                                                 "sample through the full pipeline twice and checks "
+                                                 "whether the verdict label/score ever differs "
+                                                 "(it should not -- LLMs narrate, never judge)")
+        lp.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
+        lp.add_argument("--no-cloud", action="store_true")
+        lp.add_argument("--local-model", default="qwen2.5-coder:7b",
+                        help="Ollama model tag to use for the +LLM condition "
+                             "(default: qwen2.5-coder:7b)")
+        lp.add_argument("--escalation-provider", default=None,
+                        choices=[None, "openai", "anthropic", "gemini", "xai"],
+                        help="cloud escalation provider for the +LLM condition "
+                             "(default: none -- local Ollama only, fully reproducible)")
+        lp.add_argument("--out", default=None, help="also write the report text to this path")
+        largs = lp.parse_args(argv[1:])
+
+        if not Path(largs.manifest).exists():
+            print(f"error: {largs.manifest} not found", file=sys.stderr)
+            return 2
+
+        from . import evaluation as evaluation_module
+        samples = evaluation_module.load_labeled_samples(largs.manifest)
+        report = llm_ablation.run_llm_ablation(
+            samples, local_model=largs.local_model,
+            escalation_provider=largs.escalation_provider, no_cloud=largs.no_cloud)
+        text = llm_ablation.format_report(report)
+        print(text)
+        if largs.out:
+            Path(largs.out).write_text(text)
+            print(f"[out] wrote {largs.out}")
+        return 0
+
     p = argparse.ArgumentParser(prog="mal-agent", description="Evidence-grounded static malware analysis")
     p.add_argument("path", help="path to the sample")
     p.add_argument("--source", default="manual", choices=["soc", "cdc", "manual", "dataset"])
