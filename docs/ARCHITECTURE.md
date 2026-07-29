@@ -187,6 +187,7 @@ against this project's own live capa+ATT&CK output.
 | `AuthenticodeTool` | triage | Signer identity (informational — *not* a trust short-circuit) | Windows-only, `Get-AuthenticodeSignature` via env-var-passed subprocess |
 | `CapaTool` | triage | Capability + ATT&CK + MBC (Malware Behavior Catalog) detection | Real capa-rules corpus; namespace-aware severity (see §6) |
 | `GhidraTool` | static | Per-function decompilation of capa-ranked functions + caller/callee call-graph edges between them | `pyghidra` in-process (not subprocess+Jython — Ghidra ≥11 doesn't bundle Jython) |
+| `FlossTool` | static | Recovers runtime-constructed/decoded strings (stack strings, tight-loop-decoded strings) that plain byte-pattern scanning misses, plus any IOCs hidden in them | `flare-floss`; runs unconditionally alongside `GhidraTool`, independent of whether a model is configured — deterministic, not gated behind `--enable-models` |
 | dynamic sandbox | dynamic | — | Contract-present, intentionally stubbed (v1 is static-only); reports itself as `skipped`, never silently `benign` |
 
 See `tests/` for the behavior each tool adapter is expected to guarantee
