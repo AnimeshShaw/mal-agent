@@ -470,7 +470,16 @@ class CapaTool:
         for rule_name, rule in rules.items():
             meta = rule.get("meta", {})
             attack = [a.get("id", "") for a in meta.get("attack", []) if a.get("id")]
-            mbc = sorted({m.get("id", "") for m in meta.get("mbc", []) if m.get("id")})
+            attack_tactics = sorted({a["tactic"] for a in meta.get("attack", []) if a.get("tactic")})
+            # capa's own live MBC match already carries the human-readable
+            # behavior name alongside the bare ID -- real data from the same
+            # match, not fetched or invented. Keep it so downstream narrative
+            # synthesis (behavioral_analyst) can reason over real MBC
+            # semantics instead of opaque codes.
+            mbc_labels = sorted({
+                f"{m['id']} {m['behavior']}" if m.get("behavior") else m["id"]
+                for m in meta.get("mbc", []) if m.get("id")})
+            mbc_objectives = sorted({m["objective"] for m in meta.get("mbc", []) if m.get("objective")})
             namespace = meta.get("namespace", "") or ""
             top_ns = namespace.split("/", 1)[0]
             severity = _capa_severity(rule_name, namespace)
@@ -479,13 +488,15 @@ class CapaTool:
                                 excerpt=rule_name, trust="tool")
             evidence.append(ev)
             claim = f"Capability detected: {rule_name}"
-            if mbc:
-                claim += f" (MBC: {', '.join(mbc)})"
+            if mbc_labels:
+                claim += f" (MBC: {', '.join(mbc_labels)})"
             findings.append(Finding(
                 finding_id=_id("f", input_ref, "capa", rule_name),
                 claim=claim,
                 category="capability", severity=severity, confidence=0.7,
-                evidence=[ev.evidence_id], attack_techniques=attack, source_stage="triage"))
+                evidence=[ev.evidence_id], attack_techniques=attack,
+                attack_tactics=attack_tactics, mbc_objectives=mbc_objectives,
+                source_stage="triage"))
         return StageResult(stage="triage", status="ok", findings=findings,
                            artifacts=[art], evidence=evidence,
                            notes=f"capa rules matched={len(findings)}")

@@ -55,6 +55,14 @@ class Finding(BaseModel):
     confidence: float = 0.5
     evidence: list[str] = Field(default_factory=list)      # EvidenceRecord ids
     attack_techniques: list[str] = Field(default_factory=list)
+    # Real ATT&CK tactic name(s) capa's own live match already carries
+    # alongside each technique -- e.g. "Defense Evasion" for T1140. Sourced
+    # from the same match as attack_techniques, never a separate lookup.
+    attack_tactics: list[str] = Field(default_factory=list)
+    # Real MBC objective(s) (the MBC-taxonomy equivalent of an ATT&CK
+    # tactic -- top-level grouping, e.g. "File System", "Process") that
+    # capa's own live match already carries alongside each MBC behavior ID.
+    mbc_objectives: list[str] = Field(default_factory=list)
     source_stage: str = ""
     grounded: bool = False          # set only by the verifier
 

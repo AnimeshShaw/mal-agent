@@ -128,6 +128,49 @@ land on `benign`/`undetermined`, and asserts the verdict doesn't move.
 That test is the guardrail — if someone later "improves" the narrative
 agent by giving it a severity dial, this test catches it.
 
+## 4a. Retrieval-grounded narrative (M4 "true RAG over MBC + ATT&CK")
+
+`behavioral_analyst` grounds its cross-technique narrative in real reference
+context instead of synthesizing across bare technique IDs with no shared
+context. `malagent/ttp_retrieval.py` holds a small, fixed lookup table (the
+14 MITRE ATT&CK Enterprise tactics with their real, extremely stable public
+descriptions) and a retrieval function that returns descriptions only for
+whichever tactics a sample's own real capa/ATT&CK matches actually touch —
+deliberately a membership lookup over a small fixed corpus, not an
+embedding/vector index (the corpus is 14 items; the query is "which of these
+14 does this sample touch", not a fuzzy-similarity search). MBC objectives
+are surfaced the same way but *without* an invented description — this
+project has lower confidence in MBC's own official one-line objective
+glosses than in ATT&CK's, so it lists only the real, deduplicated objective
+names `CapaTool` already extracts (self-descriptive alongside their behavior
+names) rather than guess at prose to fill the gap.
+
+`CapaTool` now also preserves capa's own live match data more fully:
+`Finding.attack_tactics` (the real tactic name, e.g. "Defense Evasion",
+alongside each technique ID) and `Finding.mbc_objectives` (the real MBC
+objective, e.g. "File System", alongside each behavior ID) — both previously
+discarded down to bare IDs even though capa's own JSON already carries them.
+The MBC claim text itself now also keeps the real behavior name (`MBC:
+C0028.002 Encrypt Data`, not just `MBC: C0028.002`).
+
+The retrieved tactic descriptions are injected into `behavioral_analyst`'s
+**system** prompt, not the untrusted findings blob: they're this project's
+own static reference corpus, not sample-derived content, so they carry no
+injection risk and don't need `wrap_untrusted` fencing. Retrieval never
+touches `Finding.severity`/`Finding.confidence` — the narrative Finding is
+still hardcoded `severity="info"`, so this is additive context only,
+verified by the same `tests/test_llm_agents_never_score.py` regression guard
+as everything else in this section.
+
+**Sourcing note**: a WebFetch attempt against `attack.mitre.org` during
+development returned tactic content that contradicted this project's own
+real, live capa output — it renamed "Defense Evasion" (TA0005) to "Stealth"
+and inserted a tactic ID (TA0112) inconsistent with ATT&CK's actual ID
+allocation history, on two independent fetches. That content was discarded
+as unreliable rather than used; the table in `ttp_retrieval.py` is instead
+the well-established public MITRE ATT&CK Enterprise taxonomy, cross-checked
+against this project's own live capa+ATT&CK output.
+
 ## 5. Tool inventory
 
 | Tool | Stage | What it contributes | Notes |

@@ -161,6 +161,12 @@ def test_load_code_dotnet_powershell_shellcode_stay_high_signal(monkeypatch):
 
 
 def test_mbc_ids_appended_to_claim_when_present(monkeypatch):
+    """capa's own live MBC match already carries the human-readable
+    objective/behavior name alongside the bare ID -- previously discarded
+    down to just the ID here, even though it's real data from the same
+    match, not anything fetched or invented. Keeping it lets downstream
+    narrative synthesis (behavioral_analyst) reason over real MBC
+    semantics instead of opaque codes."""
     rules = {
         "encrypt data using rc4": {
             "meta": {
@@ -177,7 +183,8 @@ def test_mbc_ids_appended_to_claim_when_present(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
     monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
     sr = CapaTool().run(_state())
-    assert sr.findings[0].claim == "Capability detected: encrypt data using rc4 (MBC: C0028.002)"
+    assert sr.findings[0].claim == ("Capability detected: encrypt data using rc4 "
+                                    "(MBC: C0028.002 Encrypt Data)")
 
 
 def test_multiple_mbc_ids_sorted_and_comma_joined(monkeypatch):
@@ -195,6 +202,82 @@ def test_multiple_mbc_ids_sorted_and_comma_joined(monkeypatch):
     monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
     sr = CapaTool().run(_state())
     assert sr.findings[0].claim == "Capability detected: some rule (MBC: C0002.001, C0002.002)"
+
+
+def test_mbc_behavior_name_omitted_falls_back_to_bare_id(monkeypatch):
+    """Not every real capa match's mbc entry carries a behavior name (older
+    rule versions, or capa-rules entries authored before a given MBC
+    revision) -- must degrade to the bare ID rather than crash or print a
+    literal 'None'."""
+    rules = {
+        "some rule": {
+            "meta": {
+                "namespace": "host-interaction/file-system",
+                "attack": [],
+                "mbc": [{"id": "C0002.002", "behavior": "Write File"}, {"id": "C0002.001"}],
+            },
+            "matches": [],
+        }
+    }
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
+    sr = CapaTool().run(_state())
+    assert sr.findings[0].claim == ("Capability detected: some rule "
+                                    "(MBC: C0002.001, C0002.002 Write File)")
+
+
+def test_attack_tactic_names_captured_alongside_technique_ids(monkeypatch):
+    """capa's own live ATT&CK match already carries the real tactic name
+    (e.g. 'Defense Evasion') alongside the bare technique ID -- previously
+    only the ID was kept (Finding.attack_techniques). Capturing the tactic
+    too (Finding.attack_tactics) lets downstream retrieval/narrative
+    synthesis group techniques by tactic without a separate lookup table
+    that would need to encode the technique->tactic mapping itself
+    (nontrivial: many real techniques map to more than one tactic)."""
+    rules = {
+        "deobfuscate data": {
+            "meta": {
+                "namespace": "anti-analysis/obfuscation",
+                "attack": [{"id": "T1140", "tactic": "Defense Evasion",
+                           "technique": "Deobfuscate/Decode Files or Information"}],
+            },
+            "matches": [],
+        },
+        "enumerate processes": {
+            "meta": {
+                "namespace": "host-interaction/process",
+                "attack": [{"id": "T1057", "tactic": "Discovery", "technique": "Process Discovery"},
+                          {"id": "T1518", "tactic": "Discovery", "technique": "Software Discovery"}],
+            },
+            "matches": [],
+        },
+    }
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
+    sr = CapaTool().run(_state())
+    by_claim = {f.claim: f for f in sr.findings}
+    assert by_claim["Capability detected: deobfuscate data"].attack_tactics == ["Defense Evasion"]
+    assert by_claim["Capability detected: enumerate processes"].attack_tactics == ["Discovery"]
+
+
+def test_mbc_objective_names_captured_alongside_behavior_ids(monkeypatch):
+    """Mirrors attack_tactics: capa's own live MBC match already carries the
+    real objective name (e.g. 'File System') alongside the behavior ID --
+    the MBC-taxonomy equivalent of an ATT&CK tactic, needed to group
+    behaviors for retrieval/narrative synthesis without a separate lookup."""
+    rules = {
+        "read file in .NET": {
+            "meta": {
+                "namespace": "host-interaction/file-system",
+                "mbc": [{"id": "C0051", "objective": "File System", "behavior": "Read File"}],
+            },
+            "matches": [],
+        }
+    }
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/capa")
+    monkeypatch.setattr("subprocess.run", _fake_capa_run(rules))
+    sr = CapaTool().run(_state())
+    assert sr.findings[0].mbc_objectives == ["File System"]
 
 
 def test_no_mbc_data_leaves_claim_unchanged(monkeypatch):
