@@ -2,6 +2,7 @@
 runner with identical semantics. Either way agents stay pure (D8), so the
 substrate is swappable. Budget + audit are enforced here."""
 from __future__ import annotations
+import time
 from typing import Callable, Optional
 from .agents import (dynamic_agent, make_behavioral_analyst, make_static_agent,
                     make_verifier_critic, triage_agent, ttp_agent, verifier_agent)
@@ -38,13 +39,18 @@ def run_linear(state: AnalysisState, router: Optional[ModelRouter] = None, audit
                 stage=name, status="skipped",
                 notes="skipped: sample matched the known-good hash allowlist "
                       "(triage)"))
+            # Skipped outright -- the agent() function never runs, so 0.0ms
+            # is the honest measurement, not an omitted key.
+            state.stage_durations_ms[name] = 0.0
             if audit:
                 audit.log("stage_skipped", stage=name, reason="known_good_hash_match")
             steps += 1
             continue
         if audit:
             audit.log("stage_start", stage=name)
+        t0 = time.monotonic()
         state = agent(state)
+        state.stage_durations_ms[name] = (time.monotonic() - t0) * 1000.0
         steps += 1
         if audit:
             last = state.stage_results[-1] if state.stage_results else None

@@ -6,6 +6,7 @@ UNDETERMINED rather than guessing (fail-closed)."""
 from __future__ import annotations
 import hashlib
 import os
+import time
 from dataclasses import dataclass
 from typing import Optional, Protocol, runtime_checkable
 from .contracts import AnalysisState, EgressPolicy, ModelCall, now
@@ -146,21 +147,27 @@ class ModelRouter:
                                    reason=reason, prompt_hash=phash)
                 return None
 
+        t0 = time.monotonic()
         try:
             text = provider.complete(system, prompt)
         except Exception as e:
-            self._record(provider, location, phash, location != "cloud")
+            duration_ms = (time.monotonic() - t0) * 1000.0
+            self._record(provider, location, phash, location != "cloud", duration_ms=duration_ms)
             if self.audit:
                 self.audit.log("model_error", provider=provider.name, error=str(e)[:200])
             return None
+        duration_ms = (time.monotonic() - t0) * 1000.0
         if location == "cloud":
             self.state.budget.cloud_calls_used += 1
-        self._record(provider, location, phash, True)
+        self._record(provider, location, phash, True, duration_ms=duration_ms)
         return ModelResponse(text=text, provider=provider.name, model=provider.model, location=location)
 
-    def _record(self, provider, location, phash, egress_allowed):
+    def _record(self, provider, location, phash, egress_allowed, duration_ms=None):
+        # duration_ms is None (not 0) when no provider call was ever made --
+        # e.g. the egress-blocked fail-closed path below, which records the
+        # attempt for audit purposes without timing anything real.
         mc = ModelCall(provider=provider.name, model=provider.model, location=location,
-                       prompt_hash=phash, egress_allowed=egress_allowed)
+                       prompt_hash=phash, egress_allowed=egress_allowed, duration_ms=duration_ms)
         self.state.model_calls.append(mc)
         if self.audit:
             self.audit.log("model_call", provider=provider.name, model=provider.model,
