@@ -193,7 +193,7 @@ def test_analyze_subcommand_threads_local_model_through(monkeypatch, tmp_path):
     def _fake_analyze(path, **kw):
         captured_kwargs.update(kw)
         from malagent.contracts import Verdict
-        return _FakeState(), Verdict(sample_sha256="a" * 64, verdict="benign"), "md", "txt", _FakeAudit()
+        return _FakeState(), Verdict(sample_sha256="a" * 64, verdict="benign"), "md", "txt", "html", _FakeAudit()
 
     monkeypatch.setattr("malagent.cli.analyze", _fake_analyze)
     p = tmp_path / "sample.bin"

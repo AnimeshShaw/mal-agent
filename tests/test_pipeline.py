@@ -22,7 +22,7 @@ def _make_fake_pe(tmp: Path) -> str:
 
 def test_end_to_end(tmp_path):
     path = _make_fake_pe(tmp_path)
-    state, verdict, report_md, report_txt, audit = analyze(
+    state, verdict, report_md, report_txt, report_html, audit = analyze(
         path, provenance=Provenance(source="dataset", ticket_id="TEST-1"),
         enable_models=False)
 
