@@ -1,6 +1,7 @@
 """Agents: pure-ish functions (AnalysisState) -> AnalysisState (D8). The
 orchestration substrate (LangGraph or linear) is therefore swappable."""
 from __future__ import annotations
+import time
 from typing import Optional
 from .attck_reference import technique_name
 from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
@@ -45,14 +46,29 @@ def triage_agent(state: AnalysisState) -> AnalysisState:
     # verdict that was already decided before capa even started, because
     # the orchestrator's known-good skip list only covers stages AFTER
     # triage, not triage's own remaining tools.
-    kg_tool = KnownGoodTool()
-    _merge(state, kg_tool.run(state), kg_tool.name)
+    tools = (KnownGoodTool(), StaticFeaturesTool(), IocReputationTool(), UnpackerTool(),
+             PEHeaderTool(), ElfTool(), MachoTool(), CapaTool(), AuthenticodeTool(),
+             YaraMatchTool(), DieTool(), VirusTotalTool(), EmberClassifierTool())
+    print(f"[triage] running {len(tools)} tools...", flush=True)
+    kg_tool = tools[0]
+    print(f"[triage] (1/{len(tools)}) running {kg_tool.name}...", flush=True)
+    t0 = time.monotonic()
+    sr = kg_tool.run(state)
+    print(f"[triage] (1/{len(tools)}) {kg_tool.name}: {sr.status} "
+         f"in {(time.monotonic() - t0) * 1000:.0f}ms", flush=True)
+    _merge(state, sr, kg_tool.name)
     if is_known_good_match(state):
+        print("[triage] known-good hash match -- skipping the remaining "
+             f"{len(tools) - 1} triage tools.", flush=True)
         return state
-    for tool in (StaticFeaturesTool(), IocReputationTool(), UnpackerTool(), PEHeaderTool(),
-                 ElfTool(), MachoTool(), CapaTool(), AuthenticodeTool(), YaraMatchTool(),
-                 DieTool(), VirusTotalTool(), EmberClassifierTool()):
-        _merge(state, tool.run(state), tool.name)
+    for i, tool in enumerate(tools[1:], start=2):
+        print(f"[triage] ({i}/{len(tools)}) running {tool.name}...", flush=True)
+        t0 = time.monotonic()
+        sr = tool.run(state)
+        print(f"[triage] ({i}/{len(tools)}) {tool.name}: {sr.status} "
+             f"in {(time.monotonic() - t0) * 1000:.0f}ms "
+             f"({len(sr.findings)} finding(s))", flush=True)
+        _merge(state, sr, tool.name)
     return state
 
 
@@ -116,8 +132,19 @@ def make_static_agent(router: Optional[ModelRouter] = None, ghidra: Optional[obj
     floss = floss if floss is not None else FlossTool()
 
     def static_agent(state: AnalysisState) -> AnalysisState:
-        _merge(state, ghidra.run(state), "ghidra")
-        _merge(state, floss.run(state), "floss")
+        print("[static] (1/2) running ghidra (this can take several minutes)...", flush=True)
+        t0 = time.monotonic()
+        ghidra_sr = ghidra.run(state)
+        print(f"[static] (1/2) ghidra: {ghidra_sr.status} "
+             f"in {(time.monotonic() - t0) * 1000:.0f}ms", flush=True)
+        _merge(state, ghidra_sr, "ghidra")
+
+        print("[static] (2/2) running floss...", flush=True)
+        t0 = time.monotonic()
+        floss_sr = floss.run(state)
+        print(f"[static] (2/2) floss: {floss_sr.status} "
+             f"in {(time.monotonic() - t0) * 1000:.0f}ms", flush=True)
+        _merge(state, floss_sr, "floss")
 
         if router is None:
             _merge(state, StageResult(

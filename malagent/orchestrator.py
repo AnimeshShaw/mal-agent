@@ -35,6 +35,7 @@ def run_linear(state: AnalysisState, router: Optional[ModelRouter] = None, audit
     steps = 0
     for name, agent in build_pipeline(router):
         if name in _SKIP_ON_KNOWN_GOOD and is_known_good_match(state):
+            print(f"[pipeline] stage '{name}': skipped (known-good hash match)", flush=True)
             state.stage_results.append(StageResult(
                 stage=name, status="skipped",
                 notes="skipped: sample matched the known-good hash allowlist "
@@ -48,12 +49,16 @@ def run_linear(state: AnalysisState, router: Optional[ModelRouter] = None, audit
             continue
         if audit:
             audit.log("stage_start", stage=name)
+        print(f"[pipeline] stage '{name}': running...", flush=True)
         t0 = time.monotonic()
         state = agent(state)
-        state.stage_durations_ms[name] = (time.monotonic() - t0) * 1000.0
+        duration_ms = (time.monotonic() - t0) * 1000.0
+        state.stage_durations_ms[name] = duration_ms
         steps += 1
+        last = state.stage_results[-1] if state.stage_results else None
+        print(f"[pipeline] stage '{name}': done in {duration_ms:.0f}ms "
+             f"(status={getattr(last, 'status', '?')})", flush=True)
         if audit:
-            last = state.stage_results[-1] if state.stage_results else None
             audit.log("stage_end", stage=name, status=getattr(last, "status", "?"))
         if steps >= state.budget.max_total_steps:
             break
