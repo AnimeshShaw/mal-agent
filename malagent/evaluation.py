@@ -156,6 +156,7 @@ def evaluate(samples: list[LabeledSample], *,
     total = len(samples)
 
     for i, sample in enumerate(samples, start=1):
+        print(f"=== [{i}/{total}] starting {sample.path} ===", flush=True)
         _, verdict, _, _, _ = analyze_fn(
             sample.path, provenance=Provenance(source="dataset"), **analyze_kwargs)
         predicted = verdict.verdict
