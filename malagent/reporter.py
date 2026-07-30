@@ -1,6 +1,7 @@
 """Reporter: deterministic, transparent verdict scoring + Markdown render.
 Scoring is heuristic and evidence-gated; real calibration arrives at M6."""
 from __future__ import annotations
+import html as _html
 from typing import Optional
 from .contracts import AnalysisState, Finding, Verdict
 from .models import ModelRouter
@@ -642,6 +643,182 @@ def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, st
     L.append("END OF REPORT")
     L.append(bar)
     return "\n".join(L)
+
+
+_VERDICT_COLORS = {
+    "malicious": "#c0392b", "suspicious": "#d68910", "benign": "#1e8449", "undetermined": "#5d6d7e",
+}
+_STATUS_COLORS = {
+    "ok": "#1e8449", "partial": "#d68910", "skipped": "#7f8c8d", "error": "#c0392b",
+}
+_SEVERITY_COLORS = {
+    "info": "#5d6d7e", "low": "#2874a6", "medium": "#d68910", "high": "#ca6f1e", "critical": "#c0392b",
+}
+
+
+def _e(text) -> str:
+    """Escape any sample-derived text before it goes into the HTML report.
+    Every Finding.claim / EvidenceRecord.excerpt / StageResult.notes and
+    unresolved string traces back to -- or is derived from -- an
+    untrusted malware sample, the same threat model security.py's
+    scan_for_injection/wrap_untrusted defend against for LLM prompts.
+    Here the risk is a report opened in a browser executing embedded
+    script/HTML from a sample's own strings -- every dynamic value must
+    go through this, not just the obviously long ones."""
+    return _html.escape(str(text) if text is not None else "", quote=True)
+
+
+def render_html(state: AnalysisState, v: Verdict, audit,
+                narrative: tuple[str, str]) -> str:
+    """Self-contained, offline-viewable HTML report -- no external CSS/JS/
+    fonts/CDN, since an analyst may open this air-gapped. Generated
+    alongside report.md/report.txt, not a replacement for either: this is
+    the version meant to be read in a browser, with color-coded status/
+    severity and collapsible per-tool sections; report.txt remains the
+    unabridged, grep-friendly archival record."""
+    exec_summary, recommendations = narrative
+    verdict_color = _VERDICT_COLORS.get(v.verdict, "#5d6d7e")
+
+    parts: list[str] = []
+    parts.append(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MAL-AGENT report — {_e(v.sample_sha256[:16])}</title>
+<style>
+  body {{ font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 960px;
+         margin: 2rem auto; padding: 0 1rem; color: #1c2833; background: #fff; line-height: 1.5; }}
+  h1, h2, h3 {{ color: #17202a; }}
+  .verdict-banner {{ background: {verdict_color}; color: #fff; padding: 1.25rem 1.5rem;
+                     border-radius: 8px; margin-bottom: 1.5rem; }}
+  .verdict-banner .verdict {{ font-size: 1.8rem; font-weight: 700; letter-spacing: 0.05em; }}
+  .verdict-banner .confidence {{ font-size: 1rem; opacity: 0.9; }}
+  .meta {{ font-size: 0.85rem; color: #566573; margin-bottom: 1.5rem; }}
+  .meta code {{ background: #f4f6f7; padding: 0.1rem 0.3rem; border-radius: 3px; }}
+  .chip {{ display: inline-block; background: #eaf2f8; color: #1a5276; padding: 0.15rem 0.6rem;
+          border-radius: 12px; font-size: 0.8rem; margin: 0.15rem; font-family: monospace; }}
+  section {{ margin-bottom: 2rem; }}
+  details {{ border: 1px solid #e5e8e8; border-radius: 6px; margin-bottom: 0.6rem; }}
+  details > summary {{ padding: 0.6rem 1rem; cursor: pointer; font-weight: 600;
+                       display: flex; align-items: center; gap: 0.6rem; }}
+  details .body {{ padding: 0 1rem 1rem 1rem; }}
+  .status-badge {{ display: inline-block; padding: 0.1rem 0.5rem; border-radius: 4px;
+                   color: #fff; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }}
+  .finding {{ border-left: 3px solid #ccc; padding: 0.4rem 0.8rem; margin: 0.5rem 0;
+             background: #fbfcfc; }}
+  .sev-badge {{ display: inline-block; padding: 0.05rem 0.4rem; border-radius: 3px; color: #fff;
+               font-size: 0.7rem; font-weight: 600; margin-right: 0.4rem; text-transform: uppercase; }}
+  .indicates {{ font-size: 0.85rem; color: #566573; font-style: italic; margin-top: 0.2rem; }}
+  table {{ border-collapse: collapse; width: 100%; }}
+  th, td {{ text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #eee; font-size: 0.9rem; }}
+  .unresolved {{ color: #935116; font-size: 0.85rem; }}
+  @media (prefers-color-scheme: dark) {{
+    body {{ background: #17202a; color: #eaecee; }}
+    h1, h2, h3 {{ color: #fdfefe; }}
+    .meta {{ color: #aab7b8; }}
+    .meta code {{ background: #212f3c; }}
+    details {{ border-color: #2c3e50; }}
+    .finding {{ background: #1c2833; border-left-color: #566573; }}
+    th, td {{ border-bottom-color: #2c3e50; }}
+    .chip {{ background: #21618c; color: #eaf2f8; }}
+  }}
+</style>
+</head>
+<body>
+""")
+
+    parts.append('<div class="verdict-banner">')
+    parts.append(f'<div class="verdict">{_e(v.verdict.upper())}</div>')
+    parts.append(f'<div class="confidence">Confidence: {_e(v.confidence)} &nbsp;|&nbsp; '
+                 f'Evidence complete: {_e(v.evidence_complete)}</div>')
+    parts.append('</div>')
+
+    parts.append('<div class="meta">')
+    parts.append(f'Run ID: <code>{_e(state.run_id)}</code><br>')
+    parts.append(f'Generated: {_e(v.generated_at.isoformat())}<br>')
+    parts.append(f'Sample SHA256: <code>{_e(state.sample.sha256)}</code><br>')
+    parts.append(f'Type: {_e(state.sample.file_type)} &nbsp;|&nbsp; Size: {_e(state.sample.size)} bytes')
+    parts.append('</div>')
+
+    if v.attack_techniques:
+        parts.append('<section><h2>ATT&amp;CK techniques</h2>')
+        for t in v.attack_techniques:
+            parts.append(f'<span class="chip">{_e(t)}</span>')
+        parts.append('</section>')
+
+    parts.append('<section><h2>Executive summary</h2>')
+    parts.append(f'<p>{_e(exec_summary)}</p></section>')
+
+    parts.append('<section><h2>Recommendations</h2>')
+    parts.append(f'<p>{_e(recommendations)}</p></section>')
+
+    if v.iocs:
+        parts.append('<section><h2>IOCs</h2><table><tr><th>Type</th><th>Value</th></tr>')
+        for i in v.iocs[:100]:
+            parts.append(f'<tr><td>{_e(i.type)}</td><td><code>{_e(i.value)}</code></td></tr>')
+        parts.append('</table></section>')
+
+    parts.append('<section><h2>Per-tool detailed analysis</h2>')
+    parts.append('<p style="font-size:0.9rem;color:#566573">Every tool that ran, what it does, '
+                 'its real output, and an honest indication of what each finding means '
+                 'structurally &mdash; this makes no verdict judgment.</p>')
+    for sr in state.stage_results:
+        tool_name = sr.tool or f"(unlabeled, stage={sr.stage})"
+        status_color = _STATUS_COLORS.get(sr.status, "#7f8c8d")
+        desc = TOOL_DESCRIPTIONS.get(sr.tool, "(no static description available for this tool)")
+        parts.append('<details>')
+        parts.append(f'<summary>{_e(tool_name)} '
+                     f'<span class="status-badge" style="background:{status_color}">{_e(sr.status)}</span>'
+                     f'<span style="font-weight:400;color:#909497;font-size:0.85rem">'
+                     f'stage: {_e(sr.stage)}</span></summary>')
+        parts.append('<div class="body">')
+        parts.append(f'<p>{_e(desc)}</p>')
+        if sr.findings:
+            for f in sr.findings:
+                sev_color = _SEVERITY_COLORS.get(f.severity, "#5d6d7e")
+                parts.append('<div class="finding">')
+                parts.append(f'<span class="sev-badge" style="background:{sev_color}">{_e(f.severity)}</span>'
+                             f'{_e(f.claim)}')
+                parts.append(f'<div class="indicates">Indicates: {_e(_finding_indication(f, state))}</div>')
+                parts.append('</div>')
+        else:
+            parts.append('<p style="color:#909497">No relevant findings from this tool for this sample.</p>')
+        if sr.notes:
+            parts.append(f'<p><strong>Notes:</strong> {_e(sr.notes)}</p>')
+        for u in sr.unresolved:
+            parts.append(f'<p class="unresolved">Unresolved: {_e(u)}</p>')
+        parts.append('</div></details>')
+    parts.append('</section>')
+
+    parts.append('<details><summary>Raw evidence records '
+                 f'({len(state.evidence)})</summary><div class="body">')
+    for ev in state.evidence:
+        parts.append(f'<p><code>{_e(ev.evidence_id)}</code> locator=<code>{_e(ev.locator)}</code>'
+                     f' trust={_e(ev.trust)}')
+        if ev.excerpt:
+            parts.append(f'<br><span style="color:#566573">{_e(ev.excerpt[:2000])}</span>')
+        parts.append('</p>')
+    parts.append('</div></details>')
+
+    if audit is not None:
+        parts.append('<details><summary>Audit log '
+                     f'(chain intact: {_e(audit.verify())}, {len(audit.records)} records)</summary>'
+                     '<div class="body">')
+        for rec in audit.records:
+            parts.append(f'<p style="font-size:0.8rem;color:#566573">[{rec.seq}] '
+                         f'{_e(rec.at.isoformat())} action={_e(rec.action)} '
+                         f'detail={_e(rec.detail)}</p>')
+        parts.append('</div></details>')
+
+    if v.yara_rules:
+        parts.append(f'<details><summary>Generated YARA rules ({len(v.yara_rules)})</summary>'
+                     '<div class="body">')
+        for rule in v.yara_rules:
+            parts.append(f'<pre style="white-space:pre-wrap">{_e(rule)}</pre>')
+        parts.append('</div></details>')
+
+    parts.append("</body></html>")
+    return "\n".join(parts)
 
 
 def render_markdown(state: AnalysisState, v: Verdict) -> str:

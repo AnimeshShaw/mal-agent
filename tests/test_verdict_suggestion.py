@@ -96,7 +96,7 @@ def _fake_analyze_factory(verdict_by_path):
             sha256="a" * 64, md5="b" * 32, path=path, file_type="PE", size=1,
             provenance=Provenance()))
         v = Verdict(sample_sha256="a" * 64, verdict=verdict_by_path[path])
-        return (state, v, "", "", None)
+        return (state, v, "", "", "", None)
     return _fake_analyze
 
 

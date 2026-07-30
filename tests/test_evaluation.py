@@ -45,7 +45,7 @@ class _FakeVerdict:
 def _fake_analyze_factory(verdict_by_path):
     def _fake_analyze(path, **kwargs):
         v = _FakeVerdict(verdict_by_path[path])
-        return (None, v, "", "", None)
+        return (None, v, "", "", "", None)
     return _fake_analyze
 
 

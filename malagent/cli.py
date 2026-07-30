@@ -256,7 +256,7 @@ def main(argv=None):
                           allow_pseudocode_egress=args.allow_pseudocode_egress)
     prov = Provenance(source=args.source, ticket_id=args.ticket)
 
-    state, verdict, report_md, report_txt, audit = analyze(
+    state, verdict, report_md, report_txt, report_html, audit = analyze(
         args.path, provenance=prov, policy=policy, enable_models=args.enable_models,
         local_model=args.local_model, escalation_provider=args.escalation_provider)
 
@@ -269,7 +269,9 @@ def main(argv=None):
     (out / f"{prefix}_report.md").write_text(report_md)
     (out / f"{prefix}_verdict.json").write_text(verdict.model_dump_json(indent=2))
     (out / f"{prefix}_report.txt").write_text(report_txt)
-    print(f"[out] wrote {out}/{prefix}_report.md, {prefix}_verdict.json, {prefix}_report.txt")
+    (out / f"{prefix}_report.html").write_text(report_html, encoding="utf-8")
+    print(f"[out] wrote {out}/{prefix}_report.md, {prefix}_verdict.json, "
+         f"{prefix}_report.txt, {prefix}_report.html")
     return 0
 
 

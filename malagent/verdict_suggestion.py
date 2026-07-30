@@ -99,7 +99,7 @@ def evaluate_llm_suggestions(samples: list[LabeledSample], *, router: Optional[M
     total = len(samples)
 
     for i, sample in enumerate(samples, start=1):
-        state, verdict, _, _, _ = analyze_fn(
+        state, verdict, _, _, _, _ = analyze_fn(
             sample.path, provenance=Provenance(source="dataset"), **analyze_kwargs)
         suggestion = suggest_verdict(state, verdict, router)
         predicted = suggestion.suggested_verdict if suggestion is not None else "undetermined"
