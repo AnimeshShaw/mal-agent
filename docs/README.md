@@ -15,5 +15,9 @@
    deterministic-only vs. deterministic + LLM, over real samples. Checks
    the "LLMs narrate, never judge" invariant empirically, not just via
    unit test.
-6. **[AI-Malware-Analysis-Research-and-Framework.md](AI-Malware-Analysis-Research-and-Framework.md)**
+6. **[ML_CLASSIFIER_PLAN.md](ML_CLASSIFIER_PLAN.md)** — why the
+   deterministic gate abstains on 81.6% of samples, the decision to
+   adopt a pretrained classifier (EMBER2024) instead of training from
+   71 labels, and the phased plan to add it as a decision layer.
+7. **[AI-Malware-Analysis-Research-and-Framework.md](AI-Malware-Analysis-Research-and-Framework.md)**
    — the research framing this project grew out of.
