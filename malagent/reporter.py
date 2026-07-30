@@ -51,6 +51,25 @@ def _is_packing_locator(locator: str) -> bool:
         locator.startswith("section:") and locator.endswith(":entropy"))
 
 
+def _locator_category(locator: str) -> Optional[str]:
+    """Which single high-signal corroboration category a locator maps to,
+    if any -- factored out of _high_signal_categories so the same
+    per-finding classification can be reused by the verbose per-tool
+    narrative (render_tool_narrative) without duplicating the mapping."""
+    if locator.startswith("capa:"):
+        _, ns, _ = locator.split(":", 2)
+        return ns if ns in _HIGH_SIGNAL_NAMESPACES else None
+    if _is_packing_locator(locator):
+        return "packing"
+    if locator.startswith("ioc_reputation:"):
+        return "ioc_reputation"
+    if locator.startswith("yara_match:"):
+        return "yara_match"
+    if locator.startswith("unpacker:"):
+        return "unpacked_payload"
+    return None
+
+
 def _high_signal_categories(state: AnalysisState, grounded: list[Finding]) -> set[str]:
     """Distinct high-signal categories backing this sample's medium+
     findings -- capa namespace categories, plus a single synthetic
@@ -73,18 +92,9 @@ def _high_signal_categories(state: AnalysisState, grounded: list[Finding]) -> se
             ev = ev_by_id.get(eid)
             if not ev:
                 continue
-            if ev.locator.startswith("capa:"):
-                _, ns, _ = ev.locator.split(":", 2)
-                if ns in _HIGH_SIGNAL_NAMESPACES:
-                    categories.add(ns)
-            elif _is_packing_locator(ev.locator):
-                categories.add("packing")
-            elif ev.locator.startswith("ioc_reputation:"):
-                categories.add("ioc_reputation")
-            elif ev.locator.startswith("yara_match:"):
-                categories.add("yara_match")
-            elif ev.locator.startswith("unpacker:"):
-                categories.add("unpacked_payload")
+            cat = _locator_category(ev.locator)
+            if cat:
+                categories.add(cat)
     return categories
 
 
@@ -353,6 +363,132 @@ def write_narrative(state: AnalysisState, v: Verdict,
     return _templated_summary(state, v), _templated_recommendations(v)
 
 
+# ---- verbose per-tool narrative (requested directly: every tool's real
+# output, in detail, with a plain-language what/why per tool and an
+# honest, generic "what this indicates" per finding -- never a verdict
+# word, since the analyst reading this makes that call, not this text) ----
+
+TOOL_DESCRIPTIONS: dict[str, str] = {
+    "known_good": "Checks the sample's SHA256 against a trusted-hash allowlist "
+                  "(e.g. an NSRL import). A match means this exact file is already "
+                  "known-trusted, and short-circuits the rest of the pipeline.",
+    "static_features": "Computes whole-file Shannon entropy, extracts ASCII + "
+                       "wide/UTF-16LE strings, and regex-extracts IOCs (IPs, URLs, "
+                       "domains, emails, mutexes) directly from the raw bytes.",
+    "ioc_reputation": "Cross-references IPs/domains/URLs already extracted by "
+                      "StaticFeaturesTool against local threat-intel blocklists. "
+                      "Zero network egress.",
+    "unpacker": "Recursively unpacks ZIP/ISO 9660 containers, flags risky imports "
+               "in any extracted PE payload, and flags suspicious multi-layer "
+               "nesting (e.g. a ZIP wrapping an ISO wrapping an executable).",
+    "pe_header": "Parses PE structure via pefile: imports, imphash, per-section "
+                "entropy, overlay (data appended past the last section), Rich "
+                "header, and .rsrc resource walking.",
+    "elf_header": "Linux/ELF equivalent of pe_header: dynamic-symbol imports "
+                  "(ptrace, execve, mprotect, memfd_create, ...) and non-standard-"
+                  "section entropy.",
+    "macho_header": "Identifies Mach-O header fields (CPU type, file type) only -- "
+                    "deliberately no deeper heuristics (no real macOS sample "
+                    "existed to verify a stronger check against).",
+    "capa": "Matches the binary against capa's capability-detection rule corpus, "
+           "mapping each match to an ATT&CK technique and/or MBC behavior. The "
+           "richest single deterministic signal in the pipeline.",
+    "authenticode": "Checks Windows code-signing: is the file signed, and by whom. "
+                    "Corroborating context only -- never a trust short-circuit, "
+                    "since stolen/abused signing certs are a real attack vector.",
+    "yara_match": "Matches the sample against an operator-supplied YARA rule set -- "
+                 "distinct from this project's own YARA rule *generation*, which "
+                 "always runs.",
+    "die": "Runs Detect It Easy (diec) to identify a specific, named packer/"
+          "compiler/protector, if any.",
+    "virustotal": "Looks up the file's hash against VirusTotal's aggregated "
+                 "multi-engine reputation database.",
+    "ember_classifier": "Runs a pretrained EMBER2024 LightGBM classifier (trained "
+                        "on 3.2M real files) on the raw bytes, producing a real "
+                        "P(malicious) probability. See docs/ML_CLASSIFIER_PLAN.md.",
+    "ghidra": "Headless-decompiles the top-N capa-ranked functions into real "
+             "pseudocode, and traces caller/callee call-graph edges between them.",
+    "floss": "Recovers strings constructed or decoded at runtime (stack strings, "
+            "XOR/base64-decoded-in-a-loop strings) that plain byte-pattern "
+            "scanning can't see.",
+    "static_llm_summary": "An LLM reads each decompiled function (or, if none were "
+                          "decompiled, the whole-sample capability list) and writes "
+                          "a plain-language summary. Narrative only -- severity is "
+                          "always 'info', so this can never move the verdict score.",
+    "dynamic_agent": "Intentional v1 stub: no sandbox detonation. Reports itself "
+                     "skipped, never silently 'benign'.",
+    "ttp_agent": "Groups every capability finding by ATT&CK technique ID and "
+                "resolves each to its real name via a local 692-entry MITRE "
+                "reference table.",
+    "behavioral_analyst": "Synthesizes every grounded finding into one narrative, "
+                          "grounded in real retrieved MITRE tactic descriptions. "
+                          "Narrative only -- severity is always 'info'.",
+    "verifier_agent": "The grounding gate: findings need >=1 real evidence citation "
+                      "to survive; also scans evidence text for prompt-injection "
+                      "patterns.",
+    "verifier_critic": "An independent LLM re-reads the behavioral narrative and "
+                       "its cited evidence, and can downgrade it if it finds "
+                       "overclaiming.",
+}
+
+
+def _finding_indication(f: Finding, state: AnalysisState) -> str:
+    """Honest, generic annotation of what a finding actually does inside
+    the deterministic scoring machinery -- never a verdict word
+    ('malicious'/'benign'), and never a fabricated explanation invented
+    per-claim. Derived from real facts about how build_verdict() treats
+    this exact finding (its severity weight, whether its evidence locator
+    counts toward a high-signal corroboration category), not guessed."""
+    if f.severity == "info":
+        return ("Informational context only -- severity='info' carries zero weight "
+                "in the deterministic scoring formula and can never affect the "
+                "verdict decision.")
+    ev_by_id = {e.evidence_id: e for e in state.evidence}
+    cats = {cat for eid in f.evidence
+           if (ev := ev_by_id.get(eid)) and (cat := _locator_category(ev.locator))}
+    if cats:
+        return (f"Counts toward the deterministic corroboration gate's category "
+                f"requirement (category: {', '.join(sorted(cats))}).")
+    return ("Capability evidence, but its locator doesn't map to a recognized "
+           "high-signal category -- does not by itself count toward the "
+           "corroboration requirement.")
+
+
+def render_tool_narrative(state: AnalysisState) -> str:
+    """Verbose, per-tool narrative: every tool that ran, grouped and
+    labeled unambiguously (StageResult.tool -- see agents.py's _merge()),
+    with a static what/why description, its real status, its real
+    findings with an honest indication of what each one does in the
+    scoring machinery, and its real notes/unresolved items. This makes a
+    judgment about what each piece of evidence MEANS structurally, never
+    a decision about whether the sample is malicious -- that call is
+    left to the person reading this."""
+    thin = "-" * 80
+    L: list[str] = []
+    for sr in state.stage_results:
+        tool_name = sr.tool or f"(unlabeled, stage={sr.stage})"
+        L.append(thin)
+        L.append(f"TOOL: {tool_name}  (stage: {sr.stage})")
+        L.append(thin)
+        desc = TOOL_DESCRIPTIONS.get(sr.tool, "(no static description available for this tool)")
+        L.append(f"Purpose: {desc}")
+        L.append(f"Status:  {sr.status}")
+        if sr.findings:
+            L.append(f"Findings ({len(sr.findings)}):")
+            for f in sr.findings:
+                L.append(f"  [{f.severity}, confidence={f.confidence}] {f.claim}")
+                L.append(f"    Indicates: {_finding_indication(f, state)}")
+        else:
+            L.append("Findings: (none -- no relevant findings from this tool for this sample)")
+        if sr.notes:
+            L.append(f"Notes: {sr.notes}")
+        if sr.unresolved:
+            for u in sr.unresolved:
+                L.append(f"Unresolved: {u}")
+        L.append("")
+    return "\n".join(L)
+
+
 def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, str]) -> str:
     """Mandatory, unabridged detailed report -- written on every run, not
     gated behind --out. Both a narrative half (write_narrative's prose)
@@ -410,6 +546,15 @@ def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, st
     L.append(thin)
     L.append(recommendations)
     L.append("")
+
+    L.append(thin)
+    L.append("SECTION 5: PER-TOOL DETAILED ANALYSIS")
+    L.append(thin)
+    L.append("Every tool that ran, in order, with what it does, its real output, and an "
+             "honest indication of what each finding means structurally -- this section "
+             "makes no verdict judgment; it exists to let you make your own.")
+    L.append("")
+    L.append(render_tool_narrative(state))
 
     grounded = [f for f in state.findings if f.grounded]
     L.append(thin)

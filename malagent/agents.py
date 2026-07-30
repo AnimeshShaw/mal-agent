@@ -21,7 +21,15 @@ from .virustotal_tool import VirusTotalTool
 from .yara_match import YaraMatchTool
 
 
-def _merge(state: AnalysisState, sr: StageResult) -> None:
+def _merge(state: AnalysisState, sr: StageResult, tool: Optional[str] = None) -> None:
+    """tool identifies which specific tool/agent-step produced sr, for the
+    verbose per-tool report (reporter.render_txt). Falls back to an
+    artifact's own tool tag if one exists and no explicit name was passed,
+    since most real tool runs already attach one (_artifact() in tools.py
+    always sets it) -- never guessed from stage alone, since many distinct
+    tools share stage="triage"."""
+    if sr.tool is None:
+        sr.tool = tool or (sr.artifacts[0].tool if sr.artifacts else None)
     state.stage_results.append(sr)
     state.findings.extend(sr.findings)
     state.evidence.extend(sr.evidence)
@@ -37,13 +45,14 @@ def triage_agent(state: AnalysisState) -> AnalysisState:
     # verdict that was already decided before capa even started, because
     # the orchestrator's known-good skip list only covers stages AFTER
     # triage, not triage's own remaining tools.
-    _merge(state, KnownGoodTool().run(state))
+    kg_tool = KnownGoodTool()
+    _merge(state, kg_tool.run(state), kg_tool.name)
     if is_known_good_match(state):
         return state
     for tool in (StaticFeaturesTool(), IocReputationTool(), UnpackerTool(), PEHeaderTool(),
                  ElfTool(), MachoTool(), CapaTool(), AuthenticodeTool(), YaraMatchTool(),
                  DieTool(), VirusTotalTool(), EmberClassifierTool()):
-        _merge(state, tool.run(state))
+        _merge(state, tool.run(state), tool.name)
     return state
 
 
@@ -107,14 +116,14 @@ def make_static_agent(router: Optional[ModelRouter] = None, ghidra: Optional[obj
     floss = floss if floss is not None else FlossTool()
 
     def static_agent(state: AnalysisState) -> AnalysisState:
-        _merge(state, ghidra.run(state))
-        _merge(state, floss.run(state))
+        _merge(state, ghidra.run(state), "ghidra")
+        _merge(state, floss.run(state), "floss")
 
         if router is None:
             _merge(state, StageResult(
                 stage="static", status="skipped",
                 unresolved=["No model configured: per-function semantic analysis not performed. "
-                            "Verdict rests on triage capabilities only."]))
+                            "Verdict rests on triage capabilities only."]), "static_llm_summary")
             return state
 
         trigger = determine_escalation_trigger(state)
@@ -139,13 +148,14 @@ def make_static_agent(router: Optional[ModelRouter] = None, ghidra: Optional[obj
             if summaries:
                 _merge(state, StageResult(
                     stage="static", status="ok", findings=summaries,
-                    notes=f"per-function semantic summaries: {len(summaries)}/{len(functions)}"))
+                    notes=f"per-function semantic summaries: {len(summaries)}/{len(functions)}"),
+                    "static_llm_summary")
             else:
                 _merge(state, StageResult(
                     stage="static", status="partial",
                     unresolved=["Per-function semantic analysis unavailable for all decompiled "
                                 "functions (local model down and cloud egress blocked by policy). "
-                                "Treated as undetermined, not benign."]))
+                                "Treated as undetermined, not benign."]), "static_llm_summary")
             return state
 
         # No decompiled functions (Ghidra unavailable/no targets) -> fall back to a
@@ -161,13 +171,15 @@ def make_static_agent(router: Optional[ModelRouter] = None, ghidra: Optional[obj
             _merge(state, StageResult(
                 stage="static", status="partial",
                 unresolved=["Semantic analysis unavailable (local model down and cloud egress "
-                            "blocked by policy). Treated as undetermined, not benign."]))
+                            "blocked by policy). Treated as undetermined, not benign."]),
+                "static_llm_summary")
             return state
         f = Finding(finding_id=f"static_{state.run_id[:8]}", claim=resp.text.strip()[:1200],
                     category="behavior", severity="info", confidence=0.5,
                     evidence=[], source_stage="static")
         _merge(state, StageResult(stage="static", status="ok", findings=[f],
-                                  notes=f"semantic summary via {resp.provider}/{resp.location}"))
+                                  notes=f"semantic summary via {resp.provider}/{resp.location}"),
+                "static_llm_summary")
         return state
     return static_agent
 
@@ -184,7 +196,8 @@ def make_behavioral_analyst(router: Optional[ModelRouter] = None):
         if router is None:
             _merge(state, StageResult(
                 stage="behavioral_analyst", status="skipped",
-                unresolved=["No model configured: behavioral synthesis not performed."]))
+                unresolved=["No model configured: behavioral synthesis not performed."]),
+                "behavioral_analyst")
             return state
 
         grounded_so_far = [f for f in state.findings if f.evidence]
@@ -192,7 +205,7 @@ def make_behavioral_analyst(router: Optional[ModelRouter] = None):
             _merge(state, StageResult(
                 stage="behavioral_analyst", status="skipped",
                 unresolved=["No grounded findings available to synthesize a behavioral "
-                            "narrative from."]))
+                            "narrative from."]), "behavioral_analyst")
             return state
 
         trigger = determine_escalation_trigger(state)
@@ -235,7 +248,7 @@ def make_behavioral_analyst(router: Optional[ModelRouter] = None):
             _merge(state, StageResult(
                 stage="behavioral_analyst", status="partial",
                 unresolved=["Behavioral synthesis unavailable (local model down and cloud "
-                            "egress blocked by policy)."]))
+                            "egress blocked by policy)."]), "behavioral_analyst")
             return state
 
         all_evidence_ids = sorted({eid for f in grounded_so_far for eid in f.evidence})
@@ -249,7 +262,8 @@ def make_behavioral_analyst(router: Optional[ModelRouter] = None):
             notes += (f"; retrieved {len(retrieval['tactics'])} ATT&CK tactic(s), "
                      f"{len(retrieval['mbc_objectives'])} MBC objective(s)")
         _merge(state, StageResult(
-            stage="behavioral_analyst", status="ok", findings=[finding], notes=notes))
+            stage="behavioral_analyst", status="ok", findings=[finding], notes=notes),
+            "behavioral_analyst")
         return state
     return behavioral_analyst
 
@@ -268,7 +282,7 @@ def make_verifier_critic(router: Optional[ModelRouter] = None):
                           if f.source_stage == "behavioral_analyst"), None)
         if narrative is None:
             state.stage_results.append(StageResult(
-                stage="verifier_critic", status="skipped",
+                stage="verifier_critic", status="skipped", tool="verifier_critic",
                 unresolved=["No behavioral narrative to verify (behavioral_analyst did not "
                             "produce one)."]))
             return state
@@ -276,7 +290,7 @@ def make_verifier_critic(router: Optional[ModelRouter] = None):
         if router is None:
             narrative.grounded = False
             state.stage_results.append(StageResult(
-                stage="verifier_critic", status="skipped",
+                stage="verifier_critic", status="skipped", tool="verifier_critic",
                 unresolved=["No model configured: the behavioral narrative could not be "
                             "independently verified against its evidence and is treated as "
                             "ungrounded, not silently trusted."]))
@@ -300,14 +314,14 @@ def make_verifier_critic(router: Optional[ModelRouter] = None):
         if resp is None:
             narrative.grounded = False
             state.stage_results.append(StageResult(
-                stage="verifier_critic", status="partial",
+                stage="verifier_critic", status="partial", tool="verifier_critic",
                 unresolved=["The behavioral narrative could not be independently verified "
                             "(local model down and cloud egress blocked by policy) and is "
                             "treated as ungrounded, not silently trusted."]))
             return state
 
         verdict_line = resp.text.strip()
-        sr = StageResult(stage="verifier_critic", status="ok",
+        sr = StageResult(stage="verifier_critic", status="ok", tool="verifier_critic",
                          notes=f"fact-check via {resp.provider}/{resp.location}: {verdict_line[:200]}")
         if not verdict_line.upper().startswith("SUPPORTED"):
             narrative.grounded = False
@@ -322,7 +336,7 @@ def dynamic_agent(state: AnalysisState) -> AnalysisState:
     _merge(state, StageResult(
         stage="dynamic", status="skipped",
         unresolved=["Dynamic detonation not run (static-only v1). Behaviors that only "
-                    "appear at runtime were not observed."]))
+                    "appear at runtime were not observed."]), "dynamic_agent")
     return state
 
 
@@ -361,7 +375,7 @@ def ttp_agent(state: AnalysisState) -> AnalysisState:
     if labels:
         notes += " :: " + ", ".join(labels)
     _merge(state, StageResult(stage="ttp", status="ok", findings=findings,
-                              unresolved=unresolved, notes=notes))
+                              unresolved=unresolved, notes=notes), "ttp_agent")
     return state
 
 
@@ -385,7 +399,7 @@ def verifier_agent(state: AnalysisState) -> AnalysisState:
         else:
             dropped += 1
     state.findings = kept
-    sr = StageResult(stage="verify", status="ok",
+    sr = StageResult(stage="verify", status="ok", tool="verifier_agent",
                      notes=f"grounded={sum(1 for f in kept if f.grounded)}, "
                            f"ungrounded_kept={sum(1 for f in kept if not f.grounded)}, dropped={dropped}")
     if injection_hits:
