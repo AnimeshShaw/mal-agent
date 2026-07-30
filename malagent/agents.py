@@ -15,6 +15,7 @@ from .models import ModelRouter
 from .security import scan_for_injection
 from .tools import StaticFeaturesTool, PEHeaderTool, CapaTool, AuthenticodeTool, _id
 from .ttp_retrieval import retrieve_context
+from .unpacker import UnpackerTool
 from .virustotal_tool import VirusTotalTool
 from .yara_match import YaraMatchTool
 
@@ -38,9 +39,9 @@ def triage_agent(state: AnalysisState) -> AnalysisState:
     _merge(state, KnownGoodTool().run(state))
     if is_known_good_match(state):
         return state
-    for tool in (StaticFeaturesTool(), IocReputationTool(), PEHeaderTool(), ElfTool(),
-                 MachoTool(), CapaTool(), AuthenticodeTool(), YaraMatchTool(), DieTool(),
-                 VirusTotalTool()):
+    for tool in (StaticFeaturesTool(), IocReputationTool(), UnpackerTool(), PEHeaderTool(),
+                 ElfTool(), MachoTool(), CapaTool(), AuthenticodeTool(), YaraMatchTool(),
+                 DieTool(), VirusTotalTool()):
         _merge(state, tool.run(state))
     return state
 
