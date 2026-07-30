@@ -82,6 +82,13 @@ class StageResult(BaseModel):
     iocs: list[IOC] = Field(default_factory=list)
     unresolved: list[str] = Field(default_factory=list)     # explicit "could not determine"
     notes: Optional[str] = None
+    # Which specific tool/agent-step produced this result -- e.g. "capa",
+    # "unpacker", "behavioral_analyst". Several distinct tools can share the
+    # same `stage` (all 12 triage tools are stage="triage"), so this is what
+    # lets a verbose, per-tool report unambiguously attribute each result
+    # without guessing from prose. Set by agents.py's _merge(), not guessed
+    # after the fact.
+    tool: Optional[str] = None
 
 
 # ---- policy / budget (D6) ----
