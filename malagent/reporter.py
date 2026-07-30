@@ -9,19 +9,19 @@ from .yara_gen import generate_yara_rules
 
 _SEV_W = {"info": 0.0, "low": 1.0, "medium": 2.5, "high": 4.0, "critical": 6.0}
 
-# Phase 3 of the ML classifier plan (docs/ML_CLASSIFIER_PLAN.md): the real,
-# calibrated operating point chosen from the actual score distribution
-# across all 71 real labeled samples in dataset/ -- all benign scores were
-# <= 0.0325, all malicious scores were >= 0.3707, a wide real gap with zero
-# samples inside it. 0.15 sits near the middle of that gap with margin on
-# both sides; this is NOT a formal Platt/isotonic calibration, since a gap
-# this wide makes any reasonable method converge to nearly the same
-# operating point. The gap's width is itself a caveat, not just a
-# reassurance: it's measured on a narrow, 71-sample set (26 unmodified
-# Windows system binaries + recent MalwareBazaar malware) and should be
-# revisited against a broader, more diverse held-out set before being
-# trusted at production scale.
-_EMBER_THRESHOLD = 0.15
+# Phase 3.5 of the ML classifier plan (docs/ML_CLASSIFIER_PLAN.md S10):
+# Confidence-Gated Evidence Fusion. The real score distribution across all
+# 71 real labeled samples in dataset/ showed a wide, completely empty gap
+# between all-benign (max 0.0325) and all-malicious (min 0.3707) scores.
+# These two thresholds carve out the zones where real data shows EMBER's
+# score alone is reliable; the gap between them -- where zero real data
+# points fall, exactly where a genuinely ambiguous sample would land -- is
+# where the deterministic corroboration gate gets a real vote instead of
+# just narrative value. Not a formal Platt/isotonic/conformal calibration
+# (see the plan doc for why that's the honest next refinement, not done
+# here) -- chosen with margin from the real observed gap, not guessed.
+_EMBER_CONFIDENT_BENIGN_MAX = 0.05
+_EMBER_CONFIDENT_MALICIOUS_MIN = 0.30
 
 # A pile of matches within just one or two capa namespace categories
 # shouldn't alone convict a sample -- those categories can themselves be
@@ -130,6 +130,29 @@ def _ember_score(state: AnalysisState) -> Optional[float]:
     return None
 
 
+def _named_threat_intel_override(state: AnalysisState, grounded: list[Finding]) -> bool:
+    """A specific, named match -- a third-party YARA rule, or a
+    high-confidence VirusTotal reputation hit (severity='high', >=5
+    engines per VirusTotalTool's own existing threshold) -- is stronger,
+    more specific evidence than a generic classifier probability. Gives
+    the deterministic tools a genuine veto over even a confidently
+    'benign' EMBER score (docs/ML_CLASSIFIER_PLAN.md S10). Deliberately
+    asymmetric: no equivalent override exists in the benign direction
+    beyond the known-good hash match, since no local tool here currently
+    produces evidence that strong in favor of benignity."""
+    ev_by_id = {e.evidence_id: e for e in state.evidence}
+    for f in grounded:
+        for eid in f.evidence:
+            ev = ev_by_id.get(eid)
+            if not ev:
+                continue
+            if ev.locator.startswith("yara_match:"):
+                return True
+            if ev.locator == "virustotal:detections" and f.severity == "high":
+                return True
+    return False
+
+
 def build_verdict(state: AnalysisState) -> Verdict:
     grounded = [f for f in state.findings if f.grounded]
     techniques = sorted({t for f in state.findings for t in f.attack_techniques})
@@ -149,14 +172,23 @@ def build_verdict(state: AnalysisState) -> Verdict:
             key_findings=[known_good.finding_id],
             unresolved=unresolved, evidence_complete=True)
 
-    # Phase 3 (docs/ML_CLASSIFIER_PLAN.md): when a real trained classifier's
-    # score is available, it decides -- binary malicious/benign, no
-    # 'undetermined'/'suspicious' middle ground, since it always produces a
-    # real number and forcing a guess without one is exactly what the older
-    # deterministic-gate path below exists to avoid. The gate's own
-    # categories/findings still get computed and still appear as
-    # corroborating evidence in the report (key_findings includes both),
-    # but they no longer decide the verdict when this path is active.
+    score = sum(_SEV_W[f.severity] * f.confidence for f in grounded)
+    categories = _high_signal_categories(state, grounded)
+    required_categories = _MIN_HIGH_SIGNAL_CATEGORIES + (
+        1 if _is_validly_signed(grounded, state) else 0)
+    corroborated = len(categories) >= required_categories
+
+    # Phase 3.5 (docs/ML_CLASSIFIER_PLAN.md S10): Confidence-Gated Evidence
+    # Fusion. When a real trained classifier's score is available, it is
+    # trusted directly only in the two zones a real 71-sample measurement
+    # showed it separates classes perfectly -- outside a named
+    # threat-intel override, which wins regardless. In between (the gray
+    # zone, where zero real data points fall), the deterministic
+    # corroboration gate computed above gets a genuine vote instead of
+    # just narrative value: strong corroboration convicts outright; weak
+    # corroboration produces the one deliberately-non-binary outcome
+    # ('suspicious') CGEF allows, reserved for genuine signal
+    # disagreement rather than the default result for most samples.
     ember_p = _ember_score(state)
     if ember_p is not None:
         ember_finding = next((f for f in grounded
@@ -164,22 +196,26 @@ def build_verdict(state: AnalysisState) -> Verdict:
                                     if state_ev.evidence_id in f.evidence)), None)
         key_findings = ([ember_finding.finding_id] if ember_finding else []) + \
             [f.finding_id for f in grounded if f is not ember_finding][:24]
-        if ember_p >= _EMBER_THRESHOLD:
-            verdict, conf = "malicious", round(min(0.5 + ember_p / 2, 0.99), 2)
-        else:
+
+        if _named_threat_intel_override(state, grounded):
+            verdict, conf = "malicious", 0.9
+        elif ember_p <= _EMBER_CONFIDENT_BENIGN_MAX:
             verdict, conf = "benign", round(min(0.5 + (1 - ember_p) / 2, 0.99), 2)
+        elif ember_p >= _EMBER_CONFIDENT_MALICIOUS_MIN:
+            verdict, conf = "malicious", round(min(0.5 + ember_p / 2, 0.99), 2)
+        elif corroborated:
+            verdict, conf = "malicious", round(min(0.5 + ember_p / 2, 0.9), 2)
+        elif categories:
+            verdict, conf = "suspicious", 0.5
+        else:
+            verdict, conf = "benign", round(min(0.5 + (1 - ember_p) / 2, 0.9), 2)
+
         return Verdict(
             sample_sha256=state.sample.sha256, verdict=verdict, confidence=conf,
             attack_techniques=techniques, iocs=state.iocs,
             yara_rules=generate_yara_rules(state),
             key_findings=key_findings,
             unresolved=unresolved, evidence_complete=True)
-
-    score = sum(_SEV_W[f.severity] * f.confidence for f in grounded)
-    categories = _high_signal_categories(state, grounded)
-    required_categories = _MIN_HIGH_SIGNAL_CATEGORIES + (
-        1 if _is_validly_signed(grounded, state) else 0)
-    corroborated = len(categories) >= required_categories
 
     # Coverage: did we do enough deterministic analysis to trust a benign
     # call? This must NOT depend on whether an LLM happened to respond --
