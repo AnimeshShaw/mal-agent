@@ -210,6 +210,26 @@ def check_yara_match() -> CheckResult:
     return CheckResult("yara_match", "PASS", f"{count} rule(s) compiled from {path}")
 
 
+def check_ember() -> CheckResult:
+    path = os.getenv("EMBER_MODEL_PATH")
+    if not path:
+        return CheckResult("ember_classifier", "PASS", "not configured (optional)")
+    if not Path(path).exists():
+        return CheckResult("ember_classifier", "WARN", f"EMBER_MODEL_PATH={path} set but missing")
+    try:
+        import lightgbm as lgb
+        import thrember  # noqa: F401
+    except Exception:
+        return CheckResult("ember_classifier", "WARN",
+                           f"{path} set but 'thrember'/'lightgbm' not installed "
+                           f"(see docs/ML_CLASSIFIER_PLAN.md)")
+    try:
+        lgb.Booster(model_file=path)
+    except Exception as e:
+        return CheckResult("ember_classifier", "FAIL", f"{path} set but failed to load: {e}")
+    return CheckResult("ember_classifier", "PASS", f"model loaded from {path}")
+
+
 def run_checks() -> list[CheckResult]:
     return [
         check_pefile(),
@@ -225,6 +245,7 @@ def run_checks() -> list[CheckResult]:
         check_yara_match(),
         check_die(),
         check_virustotal(),
+        check_ember(),
     ]
 
 
