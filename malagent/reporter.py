@@ -41,9 +41,10 @@ def _high_signal_categories(state: AnalysisState, grounded: list[Finding]) -> se
     """Distinct high-signal categories backing this sample's medium+
     findings -- capa namespace categories, plus a single synthetic
     'packing' category for entropy/overlay evidence, plus single
-    synthetic 'ioc_reputation'/'yara_match' categories for
-    IocReputationTool's local blocklist matches and YaraMatchTool's
-    third-party rule matches respectively. Trusts each tool's own
+    synthetic 'ioc_reputation'/'yara_match'/'unpacked_payload' categories
+    for IocReputationTool's local blocklist matches, YaraMatchTool's
+    third-party rule matches, and UnpackerTool's recovered-payload/
+    nested-container findings respectively. Trusts each tool's own
     severity decision rather than re-deriving significance independently --
     e.g. CapaTool can demote a rule within an otherwise-high-signal
     namespace (load-code/pe's benign structural rules), and re-deriving
@@ -68,6 +69,8 @@ def _high_signal_categories(state: AnalysisState, grounded: list[Finding]) -> se
                 categories.add("ioc_reputation")
             elif ev.locator.startswith("yara_match:"):
                 categories.add("yara_match")
+            elif ev.locator.startswith("unpacker:"):
+                categories.add("unpacked_payload")
     return categories
 
 

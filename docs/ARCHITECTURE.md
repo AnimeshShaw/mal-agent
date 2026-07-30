@@ -178,6 +178,7 @@ against this project's own live capa+ATT&CK output.
 | `KnownGoodTool` | triage | Hash-allowlist match → short-circuits to `benign` | NSRL RDS-style CSV/hash-per-line |
 | `StaticFeaturesTool` | triage | Entropy, ASCII + wide/UTF-16LE strings, IOC extraction (IPs/URLs/mutexes) | Suspicious-string heuristics |
 | `IocReputationTool` | triage | Cross-references extracted IPs/domains/URLs against local threat-intel blocklists | Zero network egress; runs after `StaticFeaturesTool`; matches count toward the corroboration gate (§6) |
+| `UnpackerTool` | triage | Recursively unpacks ZIP/ISO 9660 containers (depth/size-bounded against zip-bombs), flags risky imports in extracted PE payloads and suspicious nested-container patterns (e.g. ZIP wrapping an ISO wrapping an exe) | `pycdlib` for ISO 9660; excludes Office Open XML (.xlsx/.docx/.pptx, which are zip archives under the hood) from the nested-container check; matches count toward the corroboration gate (§6) |
 | `PEHeaderTool` | triage | Imports, imphash, per-section entropy, overlay detection, Rich header checksum, `.rsrc` resource parsing (embedded-PE + packed-blob detection) | `pefile`, `fast_load` mode |
 | `ElfTool` | triage | Dynamic-symbol imports (ptrace/execve/dlopen/mprotect etc.), non-standard-section entropy (packing) | `pyelftools`; skips non-ELF samples |
 | `MachoTool` | triage | Header identification (cputype, filetype) -- informational only | Deliberately no segment/import heuristics: no real Mach-O sample available in dev to verify them against, unlike `ElfTool` |
