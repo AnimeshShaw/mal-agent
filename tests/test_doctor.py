@@ -232,15 +232,47 @@ def test_yara_match_configured_but_invalid_syntax_fails(monkeypatch, tmp_path):
     assert result.status == "FAIL"
 
 
+# ---------- check_ember ----------
+
+def test_ember_not_configured_passes(monkeypatch):
+    monkeypatch.delenv("EMBER_MODEL_PATH", raising=False)
+    result = doctor.check_ember()
+    assert result.status == "PASS"
+    assert "not configured" in result.detail
+
+
+def test_ember_configured_but_missing_file_warns(monkeypatch, tmp_path):
+    monkeypatch.setenv("EMBER_MODEL_PATH", str(tmp_path / "nope.model"))
+    result = doctor.check_ember()
+    assert result.status == "WARN"
+
+
+def test_ember_configured_but_thrember_not_installed_warns(monkeypatch, tmp_path):
+    p = tmp_path / "fake.model"
+    p.write_bytes(b"fake")
+    monkeypatch.setenv("EMBER_MODEL_PATH", str(p))
+    import builtins
+    real_import = builtins.__import__
+
+    def _fake_import(name, *a, **kw):
+        if name in ("lightgbm", "thrember"):
+            raise ImportError(f"no {name}")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    result = doctor.check_ember()
+    assert result.status == "WARN"
+
+
 # ---------- run_checks / format_report / exit_code ----------
 
-def test_run_checks_returns_all_thirteen_checks():
+def test_run_checks_returns_all_fourteen_checks():
     results = doctor.run_checks()
-    assert len(results) == 13
+    assert len(results) == 14
     assert {r.name for r in results} == {
         "pefile", "capa", "ghidra", "java", "ollama", "floss",
         "cloud_keys", "database", "known_good_allowlist", "ioc_reputation",
-        "yara_match", "die", "virustotal",
+        "yara_match", "die", "virustotal", "ember_classifier",
     }
 
 

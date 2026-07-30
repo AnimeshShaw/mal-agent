@@ -185,6 +185,7 @@ against this project's own live capa+ATT&CK output.
 | `YaraMatchTool` | triage | Matches an operator-supplied YARA rule set against the sample -- distinct from `yara_gen.py`'s always-on rule *generation* | `yara-python`; never bundles rules (third-party licensing); matches count toward the corroboration gate (§6) |
 | `DieTool` | triage | Packer/protector identification via `diec -j` | `die` (Detect It Easy) CLI binary; **not live-verified** -- no real `diec` installation in this dev environment, JSON parsing modeled on documented output shape |
 | `VirusTotalTool` | triage | Hash reputation lookup | `requests`; needs `VIRUSTOTAL_API_KEY` + `EgressPolicy.allow_hash_lookup=True` (separate opt-in, §7); **not live-verified** -- no API key available in dev |
+| `EmberClassifierTool` | triage | Real P(malicious) from a pretrained EMBER2024 LightGBM classifier (3.2M training files) | `thrember` + `EMBER_MODEL_PATH`; **when configured, this becomes the verdict authority** (binary malicious/benign, no "undetermined") -- see §6a and `docs/ML_CLASSIFIER_PLAN.md`; the deterministic gate below still runs and corroborates/explains but no longer decides |
 | `AuthenticodeTool` | triage | Signer identity (informational — *not* a trust short-circuit) | Windows-only, `Get-AuthenticodeSignature` via env-var-passed subprocess |
 | `CapaTool` | triage | Capability + ATT&CK + MBC (Malware Behavior Catalog) detection | Real capa-rules corpus; namespace-aware severity (see §6) |
 | `GhidraTool` | static | Per-function decompilation of capa-ranked functions + caller/callee call-graph edges between them | `pyghidra` in-process (not subprocess+Jython — Ghidra ≥11 doesn't bundle Jython) |
@@ -196,13 +197,35 @@ See `tests/` for the behavior each tool adapter is expected to guarantee
 
 ## 6. Verdict scoring — deterministic, evidence-weighted
 
-`reporter.build_verdict()` (no LLM involved):
+`reporter.build_verdict()` (no LLM involved), in priority order:
 
-1. Known-good hash match → `benign`, high confidence, done.
-2. Otherwise, sum `severity_weight[finding.severity] × finding.confidence`
+1. Known-good hash match → `benign`, high confidence, done. A
+   cryptographic match to a trusted reference is evidence about *this
+   exact file*, not a heuristic inference from its capabilities — it
+   outranks everything below.
+2. **EMBER classifier score, if configured** (`docs/ML_CLASSIFIER_PLAN.md`
+   Phase 3): a real P(malicious) from a pretrained LightGBM model
+   (EMBER2024, trained on 3.2M files) travels as a plain `EvidenceRecord`
+   (`locator="ember:score"`), read directly by `build_verdict()` via a
+   calibrated threshold (0.15 — chosen from the real, wide gap between
+   all-benign and all-malicious scores across this project's 71 labeled
+   samples; see the plan doc for the full reasoning and honest caveats).
+   When present, this **decides the verdict outright** — binary
+   `malicious`/`benign`, no `undetermined` — because a live 71-sample
+   evaluation showed the corroboration gate below scoring `precision=0.60`
+   with confident false positives on legitimate admin tools
+   (`certutil.exe`/`schtasks.exe` at `malicious 0.9`), while EMBER scored
+   both correctly and confidently benign (`0.0009`/`0.0006`) using an
+   orthogonal, pretrained feature set. The gate's own findings still get
+   computed and still appear in the report as corroborating evidence
+   (`key_findings` includes both), but no longer decide.
+3. **Otherwise** (no EMBER configured — graceful degradation, matching
+   every other optional tool), the original deterministic corroboration
+   gate decides, unchanged: sum `severity_weight[finding.severity] ×
+   finding.confidence`
    over grounded findings (`info=0.0, low=1.0, medium=2.5, high=4.0,
    critical=6.0`).
-3. **Corroboration gate:** `capa` findings only count as `medium`+ if
+4. **Corroboration gate:** `capa` findings only count as `medium`+ if
    their rule's namespace is inherently attacker-relevant on its own
    (`anti-analysis`, `collection`, `communication`, `exploitation`,
    `impact`, `load-code`, `persistence`, `malware-family`). Two synthetic
@@ -221,11 +244,11 @@ See `tests/` for the behavior each tool adapter is expected to guarantee
    (individually false-positive-prone: e.g. anti-debugging checks are
    also common in legitimate DRM/licensing code) isn't enough to convict
    alone.
-4. No corroboration but some attacker-relevant signal → `undetermined`
+5. No corroboration but some attacker-relevant signal → `undetermined`
    (honest "can't tell", not a guess).
-5. Grounded findings exist and the deep stages actually ran, but no
+6. Grounded findings exist and the deep stages actually ran, but no
    attacker-relevant signal → `benign`.
-6. Otherwise → `undetermined` (insufficient evidence/coverage to assert
+7. Otherwise → `undetermined` (insufficient evidence/coverage to assert
    anything).
 
 This gate exists because of a real false positive found during live

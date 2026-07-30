@@ -157,6 +157,20 @@ evaluating or contributing to this project.
   silently reusing an existing one (see `docs/ARCHITECTURE.md` §7). Not
   live-verified — no API key was available in this project's own
   development.
+- **ML classifier decision authority (EMBER2024):** a real pretrained
+  LightGBM classifier (3.2M training files) that, when configured,
+  **replaces** the deterministic gate's category-counting as the verdict
+  authority — always a binary malicious/benign call, never
+  "undetermined." `pip install thrember` from
+  [FutureComputing4AI/EMBER2024](https://github.com/FutureComputing4AI/EMBER2024)
+  (Apache-2.0) **and** `pip install "signify==0.7.1"` specifically —
+  `thrember` pins `signify>=0.7.1` with no upper bound, and the latest
+  release renamed a class it imports (a real dependency-drift bug found
+  live during setup). Download a `.model` file from
+  [huggingface.co/joyce8/EMBER2024-benchmark-models](https://huggingface.co/joyce8/EMBER2024-benchmark-models)
+  (~3.5MB, no need to download the full 3.2M-file dataset), set
+  `EMBER_MODEL_PATH`. See `docs/ML_CLASSIFIER_PLAN.md` for the full
+  reasoning, real calibration numbers, and honest caveats.
 - **Per-function decompilation + call-graph tracing** between decompiled
   functions: `pip install -e ".[ghidra]"` (pyghidra),
   install Ghidra itself, and set `GHIDRA_HOME` to the install root. Ghidra
@@ -234,8 +248,11 @@ verified live. M5 (dynamic detonation) is stubbed by design (v1 is
 static-only). M6 (calibration against labeled malware/benign datasets)
 has real infrastructure and numbers now — see `docs/TODO.md` for the
 current state of each sub-item (family-attribution macro-F1, deterministic
-calibration bands, adversarial robustness, ablation studies) — full
-formal calibration against a larger held-out set remains open.
+calibration bands, adversarial robustness, ablation studies). A pretrained
+ML classifier (EMBER2024) is now wired in as an optional decision authority
+that replaces the deterministic gate's category-counting when configured —
+see `docs/ML_CLASSIFIER_PLAN.md`. Full formal calibration against a larger
+held-out set remains open.
 
 ## Documentation
 

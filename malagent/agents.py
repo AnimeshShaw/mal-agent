@@ -6,6 +6,7 @@ from .attck_reference import technique_name
 from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
 from .die_tool import DieTool
 from .elf_tool import ElfTool
+from .ember_classifier import EmberClassifierTool
 from .floss_tool import FlossTool
 from .ghidra_tool import GhidraTool
 from .ioc_reputation import IocReputationTool
@@ -41,7 +42,7 @@ def triage_agent(state: AnalysisState) -> AnalysisState:
         return state
     for tool in (StaticFeaturesTool(), IocReputationTool(), UnpackerTool(), PEHeaderTool(),
                  ElfTool(), MachoTool(), CapaTool(), AuthenticodeTool(), YaraMatchTool(),
-                 DieTool(), VirusTotalTool()):
+                 DieTool(), VirusTotalTool(), EmberClassifierTool()):
         _merge(state, tool.run(state))
     return state
 

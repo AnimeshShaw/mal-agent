@@ -9,6 +9,20 @@ from .yara_gen import generate_yara_rules
 
 _SEV_W = {"info": 0.0, "low": 1.0, "medium": 2.5, "high": 4.0, "critical": 6.0}
 
+# Phase 3 of the ML classifier plan (docs/ML_CLASSIFIER_PLAN.md): the real,
+# calibrated operating point chosen from the actual score distribution
+# across all 71 real labeled samples in dataset/ -- all benign scores were
+# <= 0.0325, all malicious scores were >= 0.3707, a wide real gap with zero
+# samples inside it. 0.15 sits near the middle of that gap with margin on
+# both sides; this is NOT a formal Platt/isotonic calibration, since a gap
+# this wide makes any reasonable method converge to nearly the same
+# operating point. The gap's width is itself a caveat, not just a
+# reassurance: it's measured on a narrow, 71-sample set (26 unmodified
+# Windows system binaries + recent MalwareBazaar malware) and should be
+# revisited against a broader, more diverse held-out set before being
+# trusted at production scale.
+_EMBER_THRESHOLD = 0.15
+
 # A pile of matches within just one or two capa namespace categories
 # shouldn't alone convict a sample -- those categories can themselves be
 # individually false-positive-prone (e.g. anti-debugging checks are also
@@ -100,6 +114,22 @@ def _is_validly_signed(grounded: list[Finding], state: AnalysisState) -> bool:
     return False
 
 
+def _ember_score(state: AnalysisState) -> Optional[float]:
+    """EmberClassifierTool's raw P(malicious), if present -- travels as a
+    plain EvidenceRecord (locator='ember:score') rather than a new frozen-
+    contract field, since the value can be read directly from what already
+    exists. Returns None (not 0.0) on anything malformed, so a corrupted
+    record degrades to the deterministic gate rather than silently voting
+    'benign'."""
+    for ev in state.evidence:
+        if ev.locator == "ember:score":
+            try:
+                return float(ev.excerpt)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def build_verdict(state: AnalysisState) -> Verdict:
     grounded = [f for f in state.findings if f.grounded]
     techniques = sorted({t for f in state.findings for t in f.attack_techniques})
@@ -117,6 +147,32 @@ def build_verdict(state: AnalysisState) -> Verdict:
             attack_techniques=techniques, iocs=state.iocs,
             yara_rules=generate_yara_rules(state),
             key_findings=[known_good.finding_id],
+            unresolved=unresolved, evidence_complete=True)
+
+    # Phase 3 (docs/ML_CLASSIFIER_PLAN.md): when a real trained classifier's
+    # score is available, it decides -- binary malicious/benign, no
+    # 'undetermined'/'suspicious' middle ground, since it always produces a
+    # real number and forcing a guess without one is exactly what the older
+    # deterministic-gate path below exists to avoid. The gate's own
+    # categories/findings still get computed and still appear as
+    # corroborating evidence in the report (key_findings includes both),
+    # but they no longer decide the verdict when this path is active.
+    ember_p = _ember_score(state)
+    if ember_p is not None:
+        ember_finding = next((f for f in grounded
+                             if any(state_ev.locator == "ember:score" for state_ev in state.evidence
+                                    if state_ev.evidence_id in f.evidence)), None)
+        key_findings = ([ember_finding.finding_id] if ember_finding else []) + \
+            [f.finding_id for f in grounded if f is not ember_finding][:24]
+        if ember_p >= _EMBER_THRESHOLD:
+            verdict, conf = "malicious", round(min(0.5 + ember_p / 2, 0.99), 2)
+        else:
+            verdict, conf = "benign", round(min(0.5 + (1 - ember_p) / 2, 0.99), 2)
+        return Verdict(
+            sample_sha256=state.sample.sha256, verdict=verdict, confidence=conf,
+            attack_techniques=techniques, iocs=state.iocs,
+            yara_rules=generate_yara_rules(state),
+            key_findings=key_findings,
             unresolved=unresolved, evidence_complete=True)
 
     score = sum(_SEV_W[f.severity] * f.confidence for f in grounded)
