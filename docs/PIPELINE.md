@@ -45,8 +45,8 @@ flowchart TD
     TTP --> BA["BEHAVIORAL_ANALYST\nLLM narrative, grounded via real\nretrieved MITRE tactic descriptions"]
     BA --> VERIFY["VERIFY\ngrounding gate: no evidence -> dropped;\nscans evidence text for prompt injection"]
     VERIFY --> VC["VERIFIER_CRITIC\nLLM fact-checks the narrative\nagainst its cited evidence"]
-    VC --> Reporter["reporter.build_verdict()\nEMBER score decides if configured,\nelse the deterministic gate — never an LLM"]
-    Reporter --> Verdict(["Verdict:\nmalicious / benign (EMBER configured)\nor + suspicious / undetermined (fallback gate)"])
+    VC --> Reporter["reporter.build_verdict()\nConfidence-Gated Evidence Fusion —\nnever an LLM's opinion"]
+    Reporter --> Verdict(["Verdict:\nmalicious / benign (EMBER confident zone or override)\nor + suspicious / undetermined (gray zone / no EMBER)"])
 ```
 
 **The one rule that shapes everything below**: only `reporter.build_verdict()`
@@ -57,10 +57,12 @@ weight in the scoring formula — so no LLM output, however confident-
 sounding, can ever move the verdict. This is enforced by a dedicated test
 (`tests/test_llm_agents_never_score.py`), not just a design intention.
 When `EmberClassifierTool` is configured (a real, pretrained ML classifier
-— not an LLM), its score *does* decide the verdict outright, binary
-malicious/benign — see `docs/ML_CLASSIFIER_PLAN.md` for why that's a
-different, deliberate architecture decision, not an exception to the rule
-above.
+— not an LLM), its score decides the verdict outright *only in its two
+empirically-confident zones*; in the untested gray zone between them, the
+deterministic gate gets a real vote (Confidence-Gated Evidence Fusion —
+see `docs/ML_CLASSIFIER_PLAN.md` §10 for why "EMBER decides alone" was
+replaced, and why that's a different, deliberate architecture decision,
+not an exception to the rule above).
 
 ---
 
@@ -80,7 +82,7 @@ above.
 | **YaraMatchTool** | Matches the sample against an operator-supplied YARA rule set (community or in-house). Distinct from this project's own rule *generation*, which always runs. | YARA matching is the industry-standard way to share "here's a signature for a known threat." | Near-instant "is this a previously-catalogued threat" check. |
 | **DieTool** | Runs Detect It Easy (`diec`) — a dedicated packer/compiler/protector identification database. | Knowing a file is packed with a *specific, named* packer is a stronger, more specific signal than generic high-entropy heuristics. | Identifies *which* packer, sometimes revealing attacker tooling preferences. |
 | **VirusTotalTool** | Looks up the file's hash against VirusTotal's aggregated multi-engine reputation database. | If dozens of AV engines already flag this exact file, that's an extremely strong corroborating signal — and it only needs a hash, not the raw file. | Leverages the whole industry's detection; requires its own explicit network-egress opt-in since even a hash lookup is still egress. |
-| **EmberClassifierTool** | Runs the file's raw bytes through a pretrained EMBER2024 LightGBM classifier (trained on 3.2M real files), producing a real P(malicious) probability. | The deterministic gate's own category-counting can't tell "genuinely spans many categories because that's its real job" (`certutil.exe`, `schtasks.exe`) apart from "genuinely malicious" — a live 71-sample test showed it scoring both those tools `malicious 0.9` by mistake. A model trained on millions of real files doesn't share that specific blind spot. | **When configured, this becomes the verdict authority** — always a binary malicious/benign call, never "undetermined." Correctly, confidently cleared both of the gate's known false positives (`0.0009`/`0.0006`) in live testing. See `docs/ML_CLASSIFIER_PLAN.md`. |
+| **EmberClassifierTool** | Runs the file's raw bytes through a pretrained EMBER2024 LightGBM classifier (trained on 3.2M real files), producing a real P(malicious) probability. | The deterministic gate's own category-counting can't tell "genuinely spans many categories because that's its real job" (`certutil.exe`, `schtasks.exe`) apart from "genuinely malicious" — a live 71-sample test showed it scoring both those tools `malicious 0.9` by mistake. A model trained on millions of real files doesn't share that specific blind spot. | **When configured, feeds Confidence-Gated Evidence Fusion** — trusted directly only in its two empirically-confident zones (correctly, confidently cleared both of the gate's known false positives, `0.0009`/`0.0006`, in live testing); in the untested gray zone between them, the deterministic gate decides instead, so the other eleven tools keep a genuine vote. See `docs/ML_CLASSIFIER_PLAN.md` §10. |
 
 ## Static stage — deeper, more expensive, still deterministic-first
 
