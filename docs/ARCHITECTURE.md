@@ -185,7 +185,7 @@ against this project's own live capa+ATT&CK output.
 | `YaraMatchTool` | triage | Matches an operator-supplied YARA rule set against the sample -- distinct from `yara_gen.py`'s always-on rule *generation* | `yara-python`; never bundles rules (third-party licensing); matches count toward the corroboration gate (§6) |
 | `DieTool` | triage | Packer/protector identification via `diec -j` | `die` (Detect It Easy) CLI binary; **not live-verified** -- no real `diec` installation in this dev environment, JSON parsing modeled on documented output shape |
 | `VirusTotalTool` | triage | Hash reputation lookup | `requests`; needs `VIRUSTOTAL_API_KEY` + `EgressPolicy.allow_hash_lookup=True` (separate opt-in, §7); **not live-verified** -- no API key available in dev |
-| `EmberClassifierTool` | triage | Real P(malicious) from a pretrained EMBER2024 LightGBM classifier (3.2M training files) | `thrember` + `EMBER_MODEL_PATH`; **when configured, this becomes the verdict authority** (binary malicious/benign, no "undetermined") -- see §6a and `docs/ML_CLASSIFIER_PLAN.md`; the deterministic gate below still runs and corroborates/explains but no longer decides |
+| `EmberClassifierTool` | triage | Real P(malicious) from a pretrained EMBER2024 LightGBM classifier (3.2M training files) | `thrember` + `EMBER_MODEL_PATH`; **when configured, feeds Confidence-Gated Evidence Fusion** (§6) -- trusted directly in its two empirically-confident zones, the deterministic gate decides in the untested gray zone between them; see `docs/ML_CLASSIFIER_PLAN.md` §10 |
 | `AuthenticodeTool` | triage | Signer identity (informational — *not* a trust short-circuit) | Windows-only, `Get-AuthenticodeSignature` via env-var-passed subprocess |
 | `CapaTool` | triage | Capability + ATT&CK + MBC (Malware Behavior Catalog) detection | Real capa-rules corpus; namespace-aware severity (see §6) |
 | `GhidraTool` | static | Per-function decompilation of capa-ranked functions + caller/callee call-graph edges between them | `pyghidra` in-process (not subprocess+Jython — Ghidra ≥11 doesn't bundle Jython) |
@@ -195,70 +195,63 @@ against this project's own live capa+ATT&CK output.
 See `tests/` for the behavior each tool adapter is expected to guarantee
 — every tool has a dedicated test module.
 
-## 6. Verdict scoring — deterministic, evidence-weighted
+## 6. Verdict scoring — Confidence-Gated Evidence Fusion (CGEF)
 
-`reporter.build_verdict()` (no LLM involved), in priority order:
+`reporter.build_verdict()` (no LLM involved), in priority order. This
+supersedes an earlier Phase 3 design ("EMBER decides alone, the gate
+just corroborates") — see `docs/ML_CLASSIFIER_PLAN.md` §10 for why that
+was replaced: it made the other eleven triage tools structurally
+irrelevant to the verdict once EMBER was configured, which defeats the
+point of a tool meant to augment deep, multi-aspect investigation. The
+current design (**Confidence-Gated Evidence Fusion**) gives the
+deterministic gate a genuine vote back.
 
-1. Known-good hash match → `benign`, high confidence, done. A
+1. **Known-good hash match** → `benign`, high confidence, done. A
    cryptographic match to a trusted reference is evidence about *this
-   exact file*, not a heuristic inference from its capabilities — it
-   outranks everything below.
-2. **EMBER classifier score, if configured** (`docs/ML_CLASSIFIER_PLAN.md`
-   Phase 3): a real P(malicious) from a pretrained LightGBM model
-   (EMBER2024, trained on 3.2M files) travels as a plain `EvidenceRecord`
-   (`locator="ember:score"`), read directly by `build_verdict()` via a
-   calibrated threshold (0.15 — chosen from the real, wide gap between
-   all-benign and all-malicious scores across this project's 71 labeled
-   samples; see the plan doc for the full reasoning and honest caveats).
-   When present, this **decides the verdict outright** — binary
-   `malicious`/`benign`, no `undetermined` — because a live 71-sample
-   evaluation showed the corroboration gate below scoring `precision=0.60`
-   with confident false positives on legitimate admin tools
-   (`certutil.exe`/`schtasks.exe` at `malicious 0.9`), while EMBER scored
-   both correctly and confidently benign (`0.0009`/`0.0006`) using an
-   orthogonal, pretrained feature set. The gate's own findings still get
-   computed and still appear in the report as corroborating evidence
-   (`key_findings` includes both), but no longer decide.
-3. **Otherwise** (no EMBER configured — graceful degradation, matching
-   every other optional tool), the original deterministic corroboration
-   gate decides, unchanged: sum `severity_weight[finding.severity] ×
-   finding.confidence`
-   over grounded findings (`info=0.0, low=1.0, medium=2.5, high=4.0,
-   critical=6.0`).
-4. **Corroboration gate:** `capa` findings only count as `medium`+ if
-   their rule's namespace is inherently attacker-relevant on its own
-   (`anti-analysis`, `collection`, `communication`, `exploitation`,
-   `impact`, `load-code`, `persistence`, `malware-family`). Two synthetic
-   categories count alongside capa namespaces: `packing` (high file/section
-   entropy or an overlay, from `PEHeaderTool`/`StaticFeaturesTool` —
-   collapsed to one category regardless of how many of the three signals
-   fire, since they indicate the same underlying phenomenon) and
-   `ioc_reputation` (a local blocklist match from `IocReputationTool`). A
-   verdict of `suspicious`/`malicious` additionally requires matches
-   spanning **≥3 distinct** such categories (**≥4** if the sample carries
-   a valid Authenticode signature — verified live via a gemma4:12b
-   comparison that a signed binary gets, and deserves, one extra category
-   of benefit of the doubt before conviction; never a full trust
-   short-circuit, since stolen/abused signing certs are a real attack
-   vector) — a handful of matches in just one or two categories
-   (individually false-positive-prone: e.g. anti-debugging checks are
-   also common in legitimate DRM/licensing code) isn't enough to convict
-   alone.
-5. No corroboration but some attacker-relevant signal → `undetermined`
-   (honest "can't tell", not a guess).
-6. Grounded findings exist and the deep stages actually ran, but no
-   attacker-relevant signal → `benign`.
-7. Otherwise → `undetermined` (insufficient evidence/coverage to assert
-   anything).
+   exact file* — it outranks everything below.
+2. **Named threat-intel override**: a real, specific match — `YaraMatchTool`
+   matching a named third-party rule, or `VirusTotalTool` reporting a
+   high detection ratio (`severity="high"`, ≥5 engines) — overrides even
+   a confident EMBER "benign" call. A specific signature match is
+   stronger, more precise evidence than a generic probability.
+3. **EMBER classifier score, if configured**, in its two empirically-
+   confident zones: `≤0.05` → `benign`; `≥0.30` → `malicious`. These
+   thresholds come from the real, measured gap between all-benign
+   (max 0.0325) and all-malicious (min 0.3707) scores across this
+   project's 71 labeled samples — trust the model outright only where
+   real data shows it separates classes perfectly.
+4. **Gray zone** (EMBER's score falls between the two confident
+   thresholds, or EMBER isn't configured at all): the deterministic
+   corroboration gate decides, using capa namespace categories (only
+   namespaces inherently attacker-relevant on their own — `anti-analysis`,
+   `collection`, `communication`, `exploitation`, `impact`, `load-code`,
+   `persistence`, `malware-family` — count as `medium`+), plus synthetic
+   `packing` (entropy/overlay), `ioc_reputation`, `yara_match`, and
+   `unpacked_payload` categories. `suspicious`/`malicious` requires
+   matches spanning **≥3 distinct** such categories (**≥4** if validly
+   signed — a signature raises the bar, never grants immunity). Within
+   this gray zone specifically: strong corroboration (≥3/4 categories)
+   convicts outright even without EMBER's help; weak corroboration (some
+   categories, not enough) produces `suspicious` — the one deliberately
+   non-binary outcome CGEF allows, reserved for genuine signal
+   disagreement, not the default result for most files (which is what
+   the pre-CGEF gate did — see below); no corroboration → `benign`.
+5. When EMBER isn't configured at all, the gray-zone gate above is the
+   *entire* decision path, exactly as it was before EMBER existed
+   (graceful degradation, matching every other optional tool) — including
+   its own honest `undetermined` fallback when there's neither
+   corroboration nor sufficient deterministic coverage to assert `benign`.
 
-This gate exists because of a real false positive found during live
-testing: a stock `notepad.exe` scored `MALICIOUS 0.9` before the gate
-existed, because every capa match — including entirely mundane ones like
-"read file" or "get disk size" — carried equal `medium` severity. Fixed
-and verified live — see the README's "Verified live" section.
-**This is a heuristic improvement grounded in real data, not validated
-calibration** — that still needs labeled malware/benign datasets, tracked
-as future work.
+**Why the corroboration-gate thresholds are what they are**: a stock
+`notepad.exe` scored `MALICIOUS 0.9` before this gate existed, because
+every capa match — including entirely mundane ones like "read file" or
+"get disk size" — carried equal `medium` severity. Fixed and verified
+live — see the README's "Verified live" section. **This remains a
+heuristic improvement grounded in real data, not validated calibration**
+for the gray-zone gate specifically; the EMBER confident-zone thresholds
+*are* grounded in a real, measured 71-sample gap (see
+`docs/ML_CLASSIFIER_PLAN.md` for the honest caveats on that gap's own
+sample size and the held-out evaluation validating CGEF as a whole).
 
 ## 7. Model routing & egress policy
 
