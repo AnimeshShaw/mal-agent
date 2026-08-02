@@ -157,11 +157,14 @@ evaluating or contributing to this project.
   silently reusing an existing one (see `docs/ARCHITECTURE.md` §7). Not
   live-verified — no API key was available in this project's own
   development.
-- **ML classifier decision authority (EMBER2024):** a real pretrained
-  LightGBM classifier (3.2M training files) that, when configured,
-  **replaces** the deterministic gate's category-counting as the verdict
-  authority — always a binary malicious/benign call, never
-  "undetermined." `pip install thrember` from
+- **ML classifier + Confidence-Gated Evidence Fusion (EMBER2024):** a real
+  pretrained LightGBM classifier (3.2M training files) that, when
+  configured, is trusted directly only in its two empirically-confident
+  score zones (measured from a real 71-sample gap — see the plan doc);
+  in the untested gray zone between them, the deterministic gate's
+  category-counting decides instead, so the other eleven triage tools
+  keep a genuine vote rather than being reduced to narrative-only.
+  `pip install thrember` from
   [FutureComputing4AI/EMBER2024](https://github.com/FutureComputing4AI/EMBER2024)
   (Apache-2.0) **and** `pip install "signify==0.7.1"` specifically —
   `thrember` pins `signify>=0.7.1` with no upper bound, and the latest
@@ -249,10 +252,12 @@ static-only). M6 (calibration against labeled malware/benign datasets)
 has real infrastructure and numbers now — see `docs/TODO.md` for the
 current state of each sub-item (family-attribution macro-F1, deterministic
 calibration bands, adversarial robustness, ablation studies). A pretrained
-ML classifier (EMBER2024) is now wired in as an optional decision authority
-that replaces the deterministic gate's category-counting when configured —
-see `docs/ML_CLASSIFIER_PLAN.md`. Full formal calibration against a larger
-held-out set remains open.
+ML classifier (EMBER2024) is now wired in via Confidence-Gated Evidence
+Fusion (CGEF): trusted directly in its two empirically-confident score
+zones, with the deterministic gate deciding the gray zone between them —
+see `docs/ML_CLASSIFIER_PLAN.md`. Held-out evaluation of CGEF as a whole
+against a fresh, non-overlapping dataset is in progress; see
+`docs/TODO.md`.
 
 ## Documentation
 
