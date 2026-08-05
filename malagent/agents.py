@@ -263,9 +263,21 @@ def make_behavioral_analyst(router: Optional[ModelRouter] = None):
                   "decompiled function summaries, ATT&CK techniques)")
         if retrieved_context:
             system += f", and this retrieved reference context:\n{retrieved_context}\n"
-        system += (", write a coherent narrative describing what this sample likely does and "
-                  "why. Be explicit about uncertainty; do not claim more than the evidence "
-                  "supports.")
+        system += (", organize your explanation around the likely attack kill-chain sequence "
+                  "(e.g. Discovery -> Persistence -> Defense Evasion -> Collection -> Command "
+                  "and Control -> Impact), using only the ATT&CK tactics and MBC objectives "
+                  "actually present in this evidence -- do not invent a stage that isn't "
+                  "supported. Explicitly separate which specific evidence supports a malicious "
+                  "interpretation from any evidence that looks benign, ambiguous, or "
+                  "contradicts it (e.g. a valid code-signing signature, or capabilities with "
+                  "legitimate non-malicious uses). If a machine-learning classifier score "
+                  "appears in the evidence, state what it indicates and whether the capability "
+                  "evidence agrees with it. Write a coherent, kill-chain-sequenced narrative "
+                  "describing what this sample likely does and why. Be explicit about "
+                  "uncertainty; do not claim more than the evidence supports. Do not state a "
+                  "final verdict word (malicious/benign/suspicious) yourself -- the actual "
+                  "determination is made deterministically elsewhere in this report; your job "
+                  "is to explain the evidence, not decide.")
 
         summary = "\n".join(f"- [{f.category}] {f.claim}" for f in grounded_so_far[:50])
         resp = router.analyze(

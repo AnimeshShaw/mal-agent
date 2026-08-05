@@ -2,8 +2,9 @@
 Scoring is heuristic and evidence-gated; real calibration arrives at M6."""
 from __future__ import annotations
 import html as _html
-from typing import Optional
+from typing import Literal, Optional
 from .contracts import AnalysisState, Finding, Verdict
+from .knowngood import is_known_good_match
 from .models import ModelRouter
 from .tools import _HIGH_SIGNAL_NAMESPACES
 from .yara_gen import generate_yara_rules
@@ -210,6 +211,18 @@ def _ember_decide_simple(ember_p: float) -> tuple[str, float]:
     distance = abs(ember_p - _EMBER_SIMPLE_THRESHOLD)
     conf = round(min(0.5 + 0.49 * (distance / span), 0.99), 2) if span else 0.99
     return verdict, conf
+
+
+def _fusion_mode_label(state: AnalysisState) -> str:
+    """Human-readable statement of which mechanism actually decided this
+    run's verdict -- the single most important transparency line in the
+    report, since the answer differs by run (and by whether EMBER was
+    even configured at all)."""
+    if _ember_score(state) is None:
+        return "n/a (no EMBER score available -- deterministic gate decided; see docs/ARCHITECTURE.md)"
+    if state.fusion_mode == "cgef":
+        return "cgef (opt-in) -- Confidence-Gated Evidence Fusion, docs/ML_CLASSIFIER_PLAN.md S10"
+    return "simple (default) -- EMBER classifier decides alone, docs/ML_CLASSIFIER_PLAN.md S11"
 
 
 def build_verdict(state: AnalysisState) -> Verdict:
@@ -457,9 +470,13 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "ttp_agent": "Groups every capability finding by ATT&CK technique ID and "
                 "resolves each to its real name via a local 692-entry MITRE "
                 "reference table.",
-    "behavioral_analyst": "Synthesizes every grounded finding into one narrative, "
-                          "grounded in real retrieved MITRE tactic descriptions. "
-                          "Narrative only -- severity is always 'info'.",
+    "behavioral_analyst": "Synthesizes every grounded finding into one kill-chain-"
+                          "sequenced narrative (e.g. Discovery -> Persistence -> "
+                          "Defense Evasion -> C2 -> Impact), grounded in real "
+                          "retrieved MITRE tactic descriptions, explicitly separating "
+                          "malicious-supporting from benign/ambiguous evidence. "
+                          "Narrative only -- severity is always 'info' and it is "
+                          "instructed never to state a verdict word itself.",
     "verifier_agent": "The grounding gate: findings need >=1 real evidence citation "
                       "to survive; also scans evidence text for prompt-injection "
                       "patterns.",
@@ -471,19 +488,37 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
 
 def _finding_indication(f: Finding, state: AnalysisState) -> str:
     """Honest, generic annotation of what a finding actually does inside
-    the deterministic scoring machinery -- never a verdict word
+    the verdict-decision machinery -- never a verdict word
     ('malicious'/'benign'), and never a fabricated explanation invented
-    per-claim. Derived from real facts about how build_verdict() treats
-    this exact finding (its severity weight, whether its evidence locator
-    counts toward a high-signal corroboration category), not guessed."""
+    per-claim. Mode-aware: in "simple" mode (the default), a finding's
+    category-corroboration membership is real context but does NOT change
+    the verdict -- EMBER alone does that -- so the text must say so
+    honestly rather than reuse cgef-mode's "counts toward the gate"
+    phrasing, which would be misleading once simple is the default."""
     if f.severity == "info":
         return ("Informational context only -- severity='info' carries zero weight "
                 "in the deterministic scoring formula and can never affect the "
                 "verdict decision.")
     ev_by_id = {e.evidence_id: e for e in state.evidence}
+    for eid in f.evidence:
+        ev = ev_by_id.get(eid)
+        if ev and ev.locator == "ember:score":
+            return ("This is the EMBER classifier score itself -- in 'simple' fusion "
+                    "mode (the default) it alone decides the verdict; see Section 2.")
+        if ev and (ev.locator.startswith("yara_match:")
+                  or (ev.locator == "virustotal:detections" and f.severity == "high")):
+            return ("Named threat-intel match -- overrides the verdict outright in "
+                    "either fusion mode, regardless of the EMBER score.")
     cats = {cat for eid in f.evidence
            if (ev := ev_by_id.get(eid)) and (cat := _locator_category(ev.locator))}
+    ember_present = _ember_score(state) is not None
     if cats:
+        if ember_present and state.fusion_mode == "simple":
+            return (f"Corroborating/contextual evidence only (category: "
+                    f"{', '.join(sorted(cats))}) -- in 'simple' fusion mode (the "
+                    f"default), the verdict is decided solely by the EMBER score "
+                    f"above; this finding does not change it. It would count toward "
+                    f"the corroboration-gate vote under --fusion-mode=cgef.")
         return (f"Counts toward the deterministic corroboration gate's category "
                 f"requirement (category: {', '.join(sorted(cats))}).")
     return ("Capability evidence, but its locator doesn't map to a recognized "
@@ -491,23 +526,62 @@ def _finding_indication(f: Finding, state: AnalysisState) -> str:
            "corroboration requirement.")
 
 
+def _finding_direction(f: Finding, state: AnalysisState) -> Literal[
+        "supports_malicious", "supports_benign", "neutral"]:
+    """Honest, structural "which way does this finding point" tag --
+    derived only from facts _finding_indication() already inspects
+    (severity, category, locator), never fabricated per-claim. Shown
+    alongside _finding_indication() so a reader can see both what a
+    finding means for scoring AND which conclusion it leans toward,
+    even when (in 'simple' mode) it doesn't itself decide anything."""
+    if f.category == "verdict_factor":
+        return "supports_benign"
+    ev_by_id = {e.evidence_id: e for e in state.evidence}
+    for eid in f.evidence:
+        ev = ev_by_id.get(eid)
+        if not ev:
+            continue
+        if ev.locator == "ember:score":
+            try:
+                score = float(ev.excerpt)
+            except (TypeError, ValueError):
+                return "neutral"
+            return "supports_malicious" if score >= _EMBER_SIMPLE_THRESHOLD else "supports_benign"
+        if ev.locator.startswith("yara_match:"):
+            return "supports_malicious"
+        if ev.locator == "virustotal:detections" and f.severity == "high":
+            return "supports_malicious"
+    if f.severity in ("medium", "high", "critical"):
+        return "supports_malicious"
+    return "neutral"
+
+
 def render_tool_narrative(state: AnalysisState) -> str:
-    """Verbose, per-tool narrative: every tool that ran, grouped and
-    labeled unambiguously (StageResult.tool -- see agents.py's _merge()),
-    with a static what/why description, its real status, its real
-    findings with an honest indication of what each one does in the
-    scoring machinery, and its real notes/unresolved items. This makes a
-    judgment about what each piece of evidence MEANS structurally, never
-    a decision about whether the sample is malicious -- that call is
-    left to the person reading this."""
+    """Verbose, per-tool narrative: every canonical tool (TOOL_DESCRIPTIONS'
+    key order) is accounted for unconditionally, not just the ones that
+    happened to produce a StageResult. A known-good hash match short-
+    circuits triage_agent after KnownGoodTool runs (agents.py), so the
+    other 11 triage tools never even run -- without this, they'd simply
+    vanish from the report instead of showing an honest 'skipped, here's
+    why,' which would look like an omission rather than an accounted-for
+    skip. Every tool gets: a static what/why description, its real status
+    (or an honest reason it never ran), its real findings with what each
+    one indicates AND which way it leans (never a verdict word itself --
+    that call is left to the person reading this), and its real
+    notes/unresolved items."""
     thin = "-" * 80
     L: list[str] = []
+    by_tool: dict[str, list] = {}
     for sr in state.stage_results:
-        tool_name = sr.tool or f"(unlabeled, stage={sr.stage})"
+        by_tool.setdefault(sr.tool or f"(unlabeled, stage={sr.stage})", []).append(sr)
+
+    known_good_hit = is_known_good_match(state)
+
+    def _render_stage_result(tool_name: str, sr) -> None:
         L.append(thin)
         L.append(f"TOOL: {tool_name}  (stage: {sr.stage})")
         L.append(thin)
-        desc = TOOL_DESCRIPTIONS.get(sr.tool, "(no static description available for this tool)")
+        desc = TOOL_DESCRIPTIONS.get(tool_name, "(no static description available for this tool)")
         L.append(f"Purpose: {desc}")
         L.append(f"Status:  {sr.status}")
         if sr.findings:
@@ -515,6 +589,7 @@ def render_tool_narrative(state: AnalysisState) -> str:
             for f in sr.findings:
                 L.append(f"  [{f.severity}, confidence={f.confidence}] {f.claim}")
                 L.append(f"    Indicates: {_finding_indication(f, state)}")
+                L.append(f"    Direction: {_finding_direction(f, state).replace('_', ' ')}")
         else:
             L.append("Findings: (none -- no relevant findings from this tool for this sample)")
         if sr.notes:
@@ -523,6 +598,32 @@ def render_tool_narrative(state: AnalysisState) -> str:
             for u in sr.unresolved:
                 L.append(f"Unresolved: {u}")
         L.append("")
+
+    for tool_name in TOOL_DESCRIPTIONS:
+        srs = by_tool.pop(tool_name, None)
+        if srs:
+            for sr in srs:
+                _render_stage_result(tool_name, sr)
+            continue
+        L.append(thin)
+        L.append(f"TOOL: {tool_name}")
+        L.append(thin)
+        desc = TOOL_DESCRIPTIONS.get(tool_name, "(no static description available for this tool)")
+        L.append(f"Purpose: {desc}")
+        L.append("Status:  skipped")
+        if known_good_hit:
+            L.append("Reason:  sample matched the known-good hash allowlist, so the "
+                     "rest of triage (and static/dynamic analysis) never ran -- see "
+                     "Section 2.")
+        else:
+            L.append("Reason:  not attempted -- no StageResult was recorded for this "
+                     "tool during this run.")
+        L.append("")
+
+    for tool_name, srs in by_tool.items():
+        for sr in srs:
+            _render_stage_result(tool_name, sr)
+
     return "\n".join(L)
 
 
@@ -561,6 +662,7 @@ def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, st
     L.append(thin)
     L.append(f"Verdict:            {v.verdict.upper()}")
     L.append(f"Confidence:         {v.confidence}")
+    L.append(f"Fusion mode:        {_fusion_mode_label(state)}")
     L.append(f"Evidence complete:  {v.evidence_complete}")
     L.append(f"ATT&CK techniques:  {', '.join(v.attack_techniques) if v.attack_techniques else '(none)'}")
     L.append(f"Family:             {v.family or '(undetermined)'}")
@@ -587,9 +689,11 @@ def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, st
     L.append(thin)
     L.append("SECTION 5: PER-TOOL DETAILED ANALYSIS")
     L.append(thin)
-    L.append("Every tool that ran, in order, with what it does, its real output, and an "
-             "honest indication of what each finding means structurally -- this section "
-             "makes no verdict judgment; it exists to let you make your own.")
+    L.append("Every tool, in canonical order, with what it does, its real output (or an "
+             "honest reason if it didn't run), and an indication of what each finding "
+             "means and which way it leans. This section is explanation, not a second "
+             "vote -- the verdict above was decided by the mechanism named in Section 2, "
+             "not by tallying findings here.")
     L.append("")
     L.append(render_tool_narrative(state))
 
@@ -745,6 +849,11 @@ def render_html(state: AnalysisState, v: Verdict, audit,
   .sev-badge {{ display: inline-block; padding: 0.05rem 0.4rem; border-radius: 3px; color: #fff;
                font-size: 0.7rem; font-weight: 600; margin-right: 0.4rem; text-transform: uppercase; }}
   .indicates {{ font-size: 0.85rem; color: #566573; font-style: italic; margin-top: 0.2rem; }}
+  .dir-badge {{ display: inline-block; padding: 0.05rem 0.4rem; border-radius: 3px; color: #fff;
+               font-size: 0.7rem; font-weight: 600; margin-top: 0.2rem; }}
+  .dir-malicious {{ background: #c0392b; }}
+  .dir-benign {{ background: #1e8449; }}
+  .dir-neutral {{ background: #7f8c8d; }}
   table {{ border-collapse: collapse; width: 100%; }}
   th, td {{ text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #eee; font-size: 0.9rem; }}
   .unresolved {{ color: #935116; font-size: 0.85rem; }}
@@ -766,7 +875,8 @@ def render_html(state: AnalysisState, v: Verdict, audit,
     parts.append('<div class="verdict-banner">')
     parts.append(f'<div class="verdict">{_e(v.verdict.upper())}</div>')
     parts.append(f'<div class="confidence">Confidence: {_e(v.confidence)} &nbsp;|&nbsp; '
-                 f'Evidence complete: {_e(v.evidence_complete)}</div>')
+                 f'Evidence complete: {_e(v.evidence_complete)} &nbsp;|&nbsp; '
+                 f'Fusion mode: {_e(_fusion_mode_label(state))}</div>')
     parts.append('</div>')
 
     parts.append('<div class="meta">')
@@ -795,13 +905,21 @@ def render_html(state: AnalysisState, v: Verdict, audit,
         parts.append('</table></section>')
 
     parts.append('<section><h2>Per-tool detailed analysis</h2>')
-    parts.append('<p style="font-size:0.9rem;color:#566573">Every tool that ran, what it does, '
-                 'its real output, and an honest indication of what each finding means '
-                 'structurally &mdash; this makes no verdict judgment.</p>')
+    parts.append('<p style="font-size:0.9rem;color:#566573">Every tool, in canonical order, with '
+                 'what it does, its real output (or an honest reason if it didn\'t run), and what '
+                 'each finding indicates and which way it leans &mdash; explanation, not a second '
+                 'vote; the verdict above was decided by the mechanism named in the banner.</p>')
+
+    by_tool: dict[str, list] = {}
     for sr in state.stage_results:
-        tool_name = sr.tool or f"(unlabeled, stage={sr.stage})"
+        by_tool.setdefault(sr.tool or f"(unlabeled, stage={sr.stage})", []).append(sr)
+    known_good_hit = is_known_good_match(state)
+    _DIR_CSS = {"supports_malicious": "dir-malicious", "supports_benign": "dir-benign",
+               "neutral": "dir-neutral"}
+
+    def _render_tool_details(tool_name: str, sr) -> None:
         status_color = _STATUS_COLORS.get(sr.status, "#7f8c8d")
-        desc = TOOL_DESCRIPTIONS.get(sr.tool, "(no static description available for this tool)")
+        desc = TOOL_DESCRIPTIONS.get(tool_name, "(no static description available for this tool)")
         parts.append('<details>')
         parts.append(f'<summary>{_e(tool_name)} '
                      f'<span class="status-badge" style="background:{status_color}">{_e(sr.status)}</span>'
@@ -812,10 +930,13 @@ def render_html(state: AnalysisState, v: Verdict, audit,
         if sr.findings:
             for f in sr.findings:
                 sev_color = _SEVERITY_COLORS.get(f.severity, "#5d6d7e")
+                direction = _finding_direction(f, state)
                 parts.append('<div class="finding">')
                 parts.append(f'<span class="sev-badge" style="background:{sev_color}">{_e(f.severity)}</span>'
                              f'{_e(f.claim)}')
                 parts.append(f'<div class="indicates">Indicates: {_e(_finding_indication(f, state))}</div>')
+                parts.append(f'<span class="dir-badge {_DIR_CSS.get(direction, "dir-neutral")}">'
+                             f'{_e(direction.replace("_", " "))}</span>')
                 parts.append('</div>')
         else:
             parts.append('<p style="color:#909497">No relevant findings from this tool for this sample.</p>')
@@ -824,6 +945,30 @@ def render_html(state: AnalysisState, v: Verdict, audit,
         for u in sr.unresolved:
             parts.append(f'<p class="unresolved">Unresolved: {_e(u)}</p>')
         parts.append('</div></details>')
+
+    for tool_name in TOOL_DESCRIPTIONS:
+        srs = by_tool.pop(tool_name, None)
+        if srs:
+            for sr in srs:
+                _render_tool_details(tool_name, sr)
+            continue
+        desc = TOOL_DESCRIPTIONS.get(tool_name, "(no static description available for this tool)")
+        reason = ("sample matched the known-good hash allowlist, so the rest of triage "
+                 "(and static/dynamic analysis) never ran"
+                 if known_good_hit else
+                 "not attempted -- no StageResult was recorded for this tool during this run")
+        parts.append('<details>')
+        parts.append(f'<summary>{_e(tool_name)} '
+                     f'<span class="status-badge" style="background:{_STATUS_COLORS["skipped"]}">skipped</span>'
+                     '</summary>')
+        parts.append(f'<div class="body"><p>{_e(desc)}</p>'
+                     f'<p style="color:#909497">Reason: {_e(reason)}</p></div>')
+        parts.append('</details>')
+
+    for tool_name, srs in by_tool.items():
+        for sr in srs:
+            _render_tool_details(tool_name, sr)
+
     parts.append('</section>')
 
     parts.append('<details><summary>Raw evidence records '
@@ -863,6 +1008,7 @@ def render_markdown(state: AnalysisState, v: Verdict) -> str:
     L.append("")
     L.append(f"**Verdict:** {v.verdict.upper()}  |  **Confidence:** {v.confidence}  "
              f"|  **Evidence complete:** {v.evidence_complete}")
+    L.append(f"**Fusion mode:** {_fusion_mode_label(state)}")
     prov = state.sample.provenance
     L.append(f"**Sample:** {state.sample.file_type}, {state.sample.size} bytes  "
              f"|  **Source:** {prov.source}"

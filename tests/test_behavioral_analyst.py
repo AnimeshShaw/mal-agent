@@ -121,6 +121,23 @@ def test_system_prompt_unchanged_shape_when_no_tactics_present():
     assert "Relevant ATT&CK tactics" not in router.calls[0]["system"]
 
 
+def test_system_prompt_requests_kill_chain_sequencing_and_forbids_verdict_word():
+    """TODO Phase 6 item 1: richer cross-tool correlation -- kill-chain
+    tactic sequencing instead of a flat summary, explicit malicious-vs-
+    benign evidence separation, and an explicit instruction not to state
+    a final verdict word (reinforces the structural severity='info'
+    guarantee at the prompt level, on top of it, not instead of it)."""
+    findings = [_grounded("f1", "Capability detected: read file", ["ev1"])]
+    state = _state_with_findings(findings)
+    router = _RecordingRouter()
+    agent = make_behavioral_analyst(router=router)
+    agent(state)
+    system = router.calls[0]["system"]
+    assert "kill-chain" in system.lower()
+    assert "malicious interpretation" in system.lower() or "supports a malicious" in system.lower()
+    assert "do not state a final verdict word" in system.lower()
+
+
 def test_reports_partial_when_model_unavailable():
     findings = [_grounded("f1", "x", ["ev1"])]
     state = _state_with_findings(findings)

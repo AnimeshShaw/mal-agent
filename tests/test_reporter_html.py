@@ -72,3 +72,52 @@ def test_html_renders_without_audit_object():
     state = AnalysisState(run_id="r1", sample=_sample())
     html = render_html(state, _verdict(), audit=None, narrative=("summary", "recommendations"))
     assert "<html" in html.lower()
+
+
+def test_html_shows_fusion_mode_in_banner():
+    """The single most important transparency line: which mechanism
+    actually decided this run's verdict must be visible in the report,
+    not just documented in prose elsewhere."""
+    ev = EvidenceRecord(evidence_id="ev1", artifact_id="art1", locator="ember:score",
+                        excerpt="0.9", trust="tool")
+    f = Finding(finding_id="f1", claim="EMBER2024 classifier score: 0.9000",
+               category="capability", severity="info", confidence=0.5,
+               evidence=["ev1"], grounded=True)
+    state = AnalysisState(run_id="r1", sample=_sample())
+    state.findings = [f]
+    state.evidence = [ev]
+    html = render_html(state, _verdict(), audit=None, narrative=("summary", "recommendations"))
+    assert "fusion mode" in html.lower()
+    assert "simple" in html.lower()
+
+
+def test_html_shows_direction_badge_on_findings():
+    ev = EvidenceRecord(evidence_id="ev1", artifact_id="art1", locator="capa:anti-analysis:rule1",
+                        excerpt="rule1", trust="tool")
+    f = Finding(finding_id="f1", claim="Capability detected: rule1", category="capability",
+               severity="medium", confidence=0.7, evidence=["ev1"], grounded=True)
+    state = AnalysisState(run_id="r1", sample=_sample())
+    state.findings = [f]
+    state.evidence = [ev]
+    state.stage_results = [StageResult(stage="triage", status="ok", tool="capa",
+                                       findings=[f], evidence=[ev])]
+    html = render_html(state, _verdict(), audit=None, narrative=("summary", "recommendations"))
+    assert 'dir-malicious' in html
+    assert "supports malicious" in html.lower()
+
+
+def test_html_accounts_for_every_canonical_tool_on_known_good_match():
+    from malagent.reporter import TOOL_DESCRIPTIONS
+    kg_ev = EvidenceRecord(evidence_id="ev_kg", artifact_id="art1",
+                          locator="known_good:sha256", excerpt="kg", trust="tool")
+    kg_f = Finding(finding_id="f_kg", claim="known good", category="verdict_factor",
+                  severity="info", confidence=0.97, evidence=[kg_ev.evidence_id], grounded=True)
+    state = AnalysisState(run_id="r1", sample=_sample())
+    state.evidence = [kg_ev]
+    state.findings = [kg_f]
+    state.stage_results = [StageResult(stage="triage", status="ok", tool="known_good",
+                                       findings=[kg_f], evidence=[kg_ev])]
+    html = render_html(state, _verdict("benign", 0.97), audit=None,
+                       narrative=("summary", "recommendations"))
+    for tool_name in TOOL_DESCRIPTIONS:
+        assert tool_name in html, f"{tool_name} missing from HTML report entirely"
