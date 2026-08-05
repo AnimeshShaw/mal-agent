@@ -45,8 +45,8 @@ flowchart TD
     TTP --> BA["BEHAVIORAL_ANALYST\nLLM narrative, grounded via real\nretrieved MITRE tactic descriptions"]
     BA --> VERIFY["VERIFY\ngrounding gate: no evidence -> dropped;\nscans evidence text for prompt injection"]
     VERIFY --> VC["VERIFIER_CRITIC\nLLM fact-checks the narrative\nagainst its cited evidence"]
-    VC --> Reporter["reporter.build_verdict()\nConfidence-Gated Evidence Fusion —\nnever an LLM's opinion"]
-    Reporter --> Verdict(["Verdict:\nmalicious / benign (EMBER confident zone or override)\nor + suspicious / undetermined (gray zone / no EMBER)"])
+    VC --> Reporter["reporter.build_verdict()\nEMBER decides alone by default —\nnever an LLM's opinion"]
+    Reporter --> Verdict(["Verdict:\nmalicious / benign (EMBER threshold or override, default)\nor + suspicious / undetermined (--fusion-mode=cgef, opt-in, or no EMBER)"])
 ```
 
 **The one rule that shapes everything below**: only `reporter.build_verdict()`
@@ -57,12 +57,13 @@ weight in the scoring formula — so no LLM output, however confident-
 sounding, can ever move the verdict. This is enforced by a dedicated test
 (`tests/test_llm_agents_never_score.py`), not just a design intention.
 When `EmberClassifierTool` is configured (a real, pretrained ML classifier
-— not an LLM), its score decides the verdict outright *only in its two
-empirically-confident zones*; in the untested gray zone between them, the
-deterministic gate gets a real vote (Confidence-Gated Evidence Fusion —
-see `docs/ML_CLASSIFIER_PLAN.md` §10 for why "EMBER decides alone" was
-replaced, and why that's a different, deliberate architecture decision,
-not an exception to the rule above).
+— not an LLM), by default (`--fusion-mode=simple`) its score decides the
+verdict outright against a single calibrated threshold — a genuinely
+held-out 57-sample evaluation validated this achieves perfect precision/
+recall/F1, and the other eleven triage tools become evidence and
+explanation, not a vote (see `docs/ML_CLASSIFIER_PLAN.md` §11). The
+original Confidence-Gated Evidence Fusion design (`--fusion-mode=cgef`)
+is preserved as an opt-in mode, not deleted — see §10 of the same doc.
 
 ---
 
@@ -82,7 +83,7 @@ not an exception to the rule above).
 | **YaraMatchTool** | Matches the sample against an operator-supplied YARA rule set (community or in-house). Distinct from this project's own rule *generation*, which always runs. | YARA matching is the industry-standard way to share "here's a signature for a known threat." | Near-instant "is this a previously-catalogued threat" check. |
 | **DieTool** | Runs Detect It Easy (`diec`) — a dedicated packer/compiler/protector identification database. | Knowing a file is packed with a *specific, named* packer is a stronger, more specific signal than generic high-entropy heuristics. | Identifies *which* packer, sometimes revealing attacker tooling preferences. |
 | **VirusTotalTool** | Looks up the file's hash against VirusTotal's aggregated multi-engine reputation database. | If dozens of AV engines already flag this exact file, that's an extremely strong corroborating signal — and it only needs a hash, not the raw file. | Leverages the whole industry's detection; requires its own explicit network-egress opt-in since even a hash lookup is still egress. |
-| **EmberClassifierTool** | Runs the file's raw bytes through a pretrained EMBER2024 LightGBM classifier (trained on 3.2M real files), producing a real P(malicious) probability. | The deterministic gate's own category-counting can't tell "genuinely spans many categories because that's its real job" (`certutil.exe`, `schtasks.exe`) apart from "genuinely malicious" — a live 71-sample test showed it scoring both those tools `malicious 0.9` by mistake. A model trained on millions of real files doesn't share that specific blind spot. | **When configured, feeds Confidence-Gated Evidence Fusion** — trusted directly only in its two empirically-confident zones (correctly, confidently cleared both of the gate's known false positives, `0.0009`/`0.0006`, in live testing); in the untested gray zone between them, the deterministic gate decides instead, so the other eleven tools keep a genuine vote. See `docs/ML_CLASSIFIER_PLAN.md` §10. |
+| **EmberClassifierTool** | Runs the file's raw bytes through a pretrained EMBER2024 LightGBM classifier (trained on 3.2M real files), producing a real P(malicious) probability. | The deterministic gate's own category-counting can't tell "genuinely spans many categories because that's its real job" (`certutil.exe`, `schtasks.exe`) apart from "genuinely malicious" — a live 71-sample test showed it scoring both those tools `malicious 0.9` by mistake. A model trained on millions of real files doesn't share that specific blind spot. | **When configured, decides the verdict alone by default** (`--fusion-mode=simple`) against a single calibrated threshold — correctly, confidently cleared both of the gate's known false positives (`0.0009`/`0.0006`) in live testing, and validated with perfect precision/recall/F1 on a genuinely held-out 57-sample set. `--fusion-mode=cgef` opts into the original fusion design where the deterministic gate votes in EMBER's gray zone instead. See `docs/ML_CLASSIFIER_PLAN.md` §10-11. |
 
 ## Static stage — deeper, more expensive, still deterministic-first
 
@@ -98,7 +99,7 @@ not an exception to the rule above).
 |---|---|---|---|
 | **dynamic** | Intentionally reports itself `skipped` — no sandbox detonation in v1. | Static-only was the explicit v1 scope decision; sandbox integration is documented future work, not an oversight. | Honesty: it never silently pretends to have run. |
 | **ttp** | Groups every capability finding by ATT&CK technique ID and resolves each to its real name via a local 692-entry reference table (sourced from MITRE's own corpus). | Technique IDs like `T1055` mean nothing to most readers without translation to "Process Injection." | Makes the report legible without a MITRE reference open in another tab; unresolved IDs are flagged honestly, never guessed. |
-| **behavioral_analyst** | Synthesizes every grounded finding so far into one narrative, now grounded in real retrieved MITRE tactic descriptions for whichever tactics this sample's techniques actually belong to (e.g. "Defense Evasion: the adversary is trying to avoid being detected") — a real kill-chain shape, not just a flat capability list. | A list of 30+ separate findings is hard for a human to mentally assemble into "so what does this thing actually do." | `severity="info"` always — narrative only, never the score, enforced by a dedicated regression test. |
+| **behavioral_analyst** | Synthesizes every grounded finding so far into one kill-chain-sequenced narrative (e.g. Discovery → Persistence → Defense Evasion → C2 → Impact), grounded in real retrieved MITRE tactic descriptions, explicitly separating evidence that supports a malicious interpretation from evidence that looks benign/ambiguous/contradicting — the primary human-readable "what makes this malicious or not" explanation now that the other 11 tools no longer vote on the verdict (§ above). | A list of 30+ separate findings is hard for a human to mentally assemble into "so what does this thing actually do." | `severity="info"` always, and explicitly instructed not to state a final verdict word itself — narrative only, never the score, enforced by a dedicated regression test. |
 | **verify** | The grounding gate: findings need ≥1 real evidence citation to survive; also scans evidence text for prompt-injection patterns (attacker-controlled strings trying to hijack an LLM reading them). | An LLM or heuristic can *claim* anything — this is what makes "evidence-grounded" true rather than a slogan. | The core trust mechanism of the whole system. |
 | **verifier_critic** | An independent LLM re-reads the narrative *and* its cited evidence, and can downgrade it if it finds overclaiming. | `verify` only checks "is there *some* evidence attached" (no understanding of content) — this adds real semantic fact-checking. | Catches LLM hallucination/overclaiming specifically, independent of whoever wrote the narrative. |
 | **reporter.build_verdict()** | The *only* place the final verdict and confidence are computed — 100% deterministic arithmetic: known-good short-circuit, severity-weighted score sum, ≥3-distinct-category corroboration gate, and a coverage check (did enough real deterministic analysis actually happen) before confidently calling something `benign`. | This is the single most load-bearing design decision in the project: no LLM's opinion can ever move this number. | A fully auditable, reproducible verdict — resistant to hallucination or prompt injection influencing the actual decision. |

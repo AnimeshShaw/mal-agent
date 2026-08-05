@@ -157,14 +157,19 @@ evaluating or contributing to this project.
   silently reusing an existing one (see `docs/ARCHITECTURE.md` §7). Not
   live-verified — no API key was available in this project's own
   development.
-- **ML classifier + Confidence-Gated Evidence Fusion (EMBER2024):** a real
-  pretrained LightGBM classifier (3.2M training files) that, when
-  configured, is trusted directly only in its two empirically-confident
-  score zones (measured from a real 71-sample gap — see the plan doc);
-  in the untested gray zone between them, the deterministic gate's
-  category-counting decides instead, so the other eleven triage tools
-  keep a genuine vote rather than being reduced to narrative-only.
-  `pip install thrember` from
+- **ML classifier decides the verdict (EMBER2024):** a real pretrained
+  LightGBM classifier (3.2M training files) that, when configured,
+  decides malicious/benign alone by default (`--fusion-mode=simple`) —
+  validated with perfect precision/recall/F1 on a genuinely held-out
+  57-sample set (zero overlap with the samples used to calibrate it).
+  The other eleven triage tools become evidence and explanation, not a
+  vote: every finding is annotated with what it indicates and whether it
+  supports or contradicts the verdict, and every tool is accounted for
+  in the report whether it ran, was skipped, or errored. The original
+  fusion design (Confidence-Gated Evidence Fusion, where the
+  deterministic gate votes in EMBER's gray zone) is preserved as an
+  opt-in mode (`--fusion-mode=cgef`) for ongoing research — see
+  `docs/ML_CLASSIFIER_PLAN.md` §10-11. `pip install thrember` from
   [FutureComputing4AI/EMBER2024](https://github.com/FutureComputing4AI/EMBER2024)
   (Apache-2.0) **and** `pip install "signify==0.7.1"` specifically —
   `thrember` pins `signify>=0.7.1` with no upper bound, and the latest
@@ -252,12 +257,14 @@ static-only). M6 (calibration against labeled malware/benign datasets)
 has real infrastructure and numbers now — see `docs/TODO.md` for the
 current state of each sub-item (family-attribution macro-F1, deterministic
 calibration bands, adversarial robustness, ablation studies). A pretrained
-ML classifier (EMBER2024) is now wired in via Confidence-Gated Evidence
-Fusion (CGEF): trusted directly in its two empirically-confident score
-zones, with the deterministic gate deciding the gray zone between them —
-see `docs/ML_CLASSIFIER_PLAN.md`. Held-out evaluation of CGEF as a whole
-against a fresh, non-overlapping dataset is in progress; see
-`docs/TODO.md`.
+ML classifier (EMBER2024) decides the verdict alone by default
+(`--fusion-mode=simple`) — a genuinely held-out, non-overlapping 57-sample
+evaluation validated perfect precision/recall/F1, versus 61% undetermined
+and real false positives from the old deterministic-gate-alone approach.
+The original fusion design (Confidence-Gated Evidence Fusion, where the
+gate votes in EMBER's gray zone) is preserved as an opt-in research mode
+(`--fusion-mode=cgef`) — see `docs/ML_CLASSIFIER_PLAN.md` §10-11 for the
+full numbers and the decision.
 
 ## Documentation
 
