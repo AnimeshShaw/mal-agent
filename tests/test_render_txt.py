@@ -27,6 +27,22 @@ def test_includes_all_major_sections():
     assert "Recommendation text." in text
 
 
+def test_fusion_mode_line_shown_in_verdict_section():
+    ev = EvidenceRecord(evidence_id="ev1", artifact_id="art1", locator="ember:score",
+                        excerpt="0.9", trust="tool")
+    f = Finding(finding_id="f1", claim="EMBER2024 classifier score: 0.9000",
+               category="capability", severity="info", confidence=0.5,
+               evidence=["ev1"], grounded=True)
+    state = AnalysisState(run_id="r1", sample=_sample())
+    state.findings = [f]
+    state.evidence = [ev]
+    v = Verdict(sample_sha256="a" * 64, verdict="malicious", confidence=0.9)
+    audit = AuditLog("r1")
+    text = render_txt(state, v, audit, ("s", "r"))
+    assert "Fusion mode:" in text
+    assert "simple" in text.lower()
+
+
 def test_grounded_findings_not_truncated_at_25():
     """report.md caps key_findings at 25; the txt report must not."""
     state = AnalysisState(run_id="r1", sample=_sample())
