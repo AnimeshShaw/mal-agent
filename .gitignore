@@ -8,6 +8,12 @@ out/
 mal-agent-reports/
 .env
 
+# Local SQLite persistence for the web UI (docs/TODO.md Phase 8) --
+# per-machine runtime data, not project content.
+*.db
+web/frontend/node_modules/
+web/frontend/dist/
+
 # Internal engineering-log docs -- kept locally for reference, not published.
 # (Also stripped from git history entirely; see the full-history backup
 # bundle kept alongside this repo if these ever need to be recovered.)
