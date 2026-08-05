@@ -204,6 +204,62 @@ def test_analyze_subcommand_threads_local_model_through(monkeypatch, tmp_path):
     assert captured_kwargs["local_model"] == "gemma4:12b"
 
 
+def test_analyze_subcommand_defaults_to_simple_fusion_mode(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    class _FakeAudit:
+        def verify(self):
+            return True
+        records = []
+
+    class _FakeSample:
+        sha256 = "a" * 64
+
+    class _FakeState:
+        sample = _FakeSample()
+
+    def _fake_analyze(path, **kw):
+        captured_kwargs.update(kw)
+        from malagent.contracts import Verdict
+        return _FakeState(), Verdict(sample_sha256="a" * 64, verdict="benign"), "md", "txt", "html", _FakeAudit()
+
+    monkeypatch.setattr("malagent.cli.analyze", _fake_analyze)
+    p = tmp_path / "sample.bin"
+    p.write_bytes(b"MZ" + b"\x00" * 64)
+
+    rc = main([str(p), "--out", str(tmp_path / "out")])
+    assert rc == 0
+    assert captured_kwargs["fusion_mode"] == "simple"
+
+
+def test_analyze_subcommand_threads_fusion_mode_through(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    class _FakeAudit:
+        def verify(self):
+            return True
+        records = []
+
+    class _FakeSample:
+        sha256 = "a" * 64
+
+    class _FakeState:
+        sample = _FakeSample()
+
+    def _fake_analyze(path, **kw):
+        captured_kwargs.update(kw)
+        from malagent.contracts import Verdict
+        return _FakeState(), Verdict(sample_sha256="a" * 64, verdict="benign"), "md", "txt", "html", _FakeAudit()
+
+    monkeypatch.setattr("malagent.cli.analyze", _fake_analyze)
+    p = tmp_path / "sample.bin"
+    p.write_bytes(b"MZ" + b"\x00" * 64)
+
+    rc = main([str(p), "--fusion-mode", "cgef", "--out", str(tmp_path / "out")])
+    assert rc == 0
+    assert captured_kwargs["fusion_mode"] == "cgef"
+
+
 class _FakeAblationReport:
     def __init__(self):
         self.results = [1, 2]

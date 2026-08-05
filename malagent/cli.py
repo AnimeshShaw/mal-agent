@@ -26,6 +26,9 @@ def main(argv=None):
                         help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
         ep.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
+        ep.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef"],
+                        help="verdict decision method when EMBER is configured "
+                             "(see docs/ML_CLASSIFIER_PLAN.md S10/S11)")
         ep.add_argument("--out", default=None, help="also write the report text to this path")
         eargs = ep.parse_args(argv[1:])
 
@@ -37,7 +40,8 @@ def main(argv=None):
         policy = EgressPolicy(allow_cloud=not eargs.no_cloud)
         report = evaluation.evaluate(samples, enable_models=eargs.enable_models, policy=policy,
                                      local_model=eargs.local_model,
-                                     escalation_provider=eargs.escalation_provider)
+                                     escalation_provider=eargs.escalation_provider,
+                                     fusion_mode=eargs.fusion_mode)
         text = evaluation.format_report(report)
         print(text)
         if eargs.out:
@@ -242,6 +246,12 @@ def main(argv=None):
                    help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
     p.add_argument("--escalation-provider", default="anthropic",
                    choices=["openai", "anthropic", "gemini", "xai"])
+    p.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef"],
+                   help="verdict decision method when EMBER is configured: 'simple' "
+                        "(default) lets the EMBER classifier alone decide malicious/"
+                        "benign; 'cgef' opts into the deterministic corroboration "
+                        "gate voting in the gray zone (see docs/ML_CLASSIFIER_PLAN.md "
+                        "S10/S11)")
     p.add_argument("--out", default="./mal-agent-reports",
                    help="dir to write report.md + verdict.json + the mandatory report.txt "
                         "(default: ./mal-agent-reports; always written, files are namespaced "
@@ -258,7 +268,8 @@ def main(argv=None):
 
     state, verdict, report_md, report_txt, report_html, audit = analyze(
         args.path, provenance=prov, policy=policy, enable_models=args.enable_models,
-        local_model=args.local_model, escalation_provider=args.escalation_provider)
+        local_model=args.local_model, escalation_provider=args.escalation_provider,
+        fusion_mode=args.fusion_mode)
 
     print(report_md)
     print(f"\n[audit] chain intact: {audit.verify()}  records: {len(audit.records)}")

@@ -35,6 +35,19 @@ _EMBER_CONFIDENT_MALICIOUS_MIN = 0.30
 # calibration (that needs labeled malware/benign data -- M6).
 _MIN_HIGH_SIGNAL_CATEGORIES = 3
 
+# Phase 3.6 (docs/ML_CLASSIFIER_PLAN.md S11): "simple" fusion mode, now the
+# DEFAULT. A genuinely held-out 57-sample evaluation (zero hash/threshold
+# overlap with the 71 samples used above) showed this single naive threshold
+# achieves perfect precision/recall/F1 on its own (45 TP, 0 FP, 12 TN, 0 FN,
+# 0 undetermined) -- and CGEF's gray-zone gate never demonstrated a case
+# where it corrected a wrong EMBER call. Rather than keep the other 11
+# triage tools voting on the verdict via category-counting, EMBER alone
+# decides malicious/benign outright when configured; those tools' findings
+# become evidence/explanation only (see render_tool_narrative below). CGEF
+# is not deleted -- it's preserved as an opt-in mode (fusion_mode="cgef")
+# for the unresolved "does fusion ever beat the raw model" research question.
+_EMBER_SIMPLE_THRESHOLD = 0.15
+
 
 def _is_packing_locator(locator: str) -> bool:
     """PEHeaderTool's entropy/overlay findings are a real, independent
@@ -164,6 +177,41 @@ def _named_threat_intel_override(state: AnalysisState, grounded: list[Finding]) 
     return False
 
 
+def _ember_decide_cgef(ember_p: float, corroborated: bool, categories: set[str]) -> tuple[str, float]:
+    """Confidence-Gated Evidence Fusion (docs/ML_CLASSIFIER_PLAN.md S10),
+    opt-in via fusion_mode="cgef". Trusts EMBER directly only in the two
+    zones a real 71-sample measurement showed it separates classes
+    perfectly; in the gray zone between them, the deterministic
+    corroboration gate gets a genuine vote: strong corroboration convicts
+    outright, weak corroboration produces the one deliberately-non-binary
+    'suspicious' outcome CGEF allows."""
+    if ember_p <= _EMBER_CONFIDENT_BENIGN_MAX:
+        return "benign", round(min(0.5 + (1 - ember_p) / 2, 0.99), 2)
+    if ember_p >= _EMBER_CONFIDENT_MALICIOUS_MIN:
+        return "malicious", round(min(0.5 + ember_p / 2, 0.99), 2)
+    if corroborated:
+        return "malicious", round(min(0.5 + ember_p / 2, 0.9), 2)
+    if categories:
+        return "suspicious", 0.5
+    return "benign", round(min(0.5 + (1 - ember_p) / 2, 0.9), 2)
+
+
+def _ember_decide_simple(ember_p: float) -> tuple[str, float]:
+    """"simple" fusion mode (docs/ML_CLASSIFIER_PLAN.md S11), the DEFAULT.
+    EMBER alone decides, binary, no gray zone, no "suspicious" middle
+    ground -- the other 11 triage tools' findings are evidence/explanation
+    only in this mode, not a vote. Confidence is continuous and scaled by
+    distance from the single calibrated threshold: ~0.5 right at the
+    boundary (maximal uncertainty), rising toward 0.99 as the score moves
+    away from it on whichever side it lands, each side scaled against its
+    own available range so both directions reach the same ceiling."""
+    verdict = "malicious" if ember_p >= _EMBER_SIMPLE_THRESHOLD else "benign"
+    span = (1.0 - _EMBER_SIMPLE_THRESHOLD) if verdict == "malicious" else _EMBER_SIMPLE_THRESHOLD
+    distance = abs(ember_p - _EMBER_SIMPLE_THRESHOLD)
+    conf = round(min(0.5 + 0.49 * (distance / span), 0.99), 2) if span else 0.99
+    return verdict, conf
+
+
 def build_verdict(state: AnalysisState) -> Verdict:
     grounded = [f for f in state.findings if f.grounded]
     techniques = sorted({t for f in state.findings for t in f.attack_techniques})
@@ -189,17 +237,11 @@ def build_verdict(state: AnalysisState) -> Verdict:
         1 if _is_validly_signed(grounded, state) else 0)
     corroborated = len(categories) >= required_categories
 
-    # Phase 3.5 (docs/ML_CLASSIFIER_PLAN.md S10): Confidence-Gated Evidence
-    # Fusion. When a real trained classifier's score is available, it is
-    # trusted directly only in the two zones a real 71-sample measurement
-    # showed it separates classes perfectly -- outside a named
-    # threat-intel override, which wins regardless. In between (the gray
-    # zone, where zero real data points fall), the deterministic
-    # corroboration gate computed above gets a genuine vote instead of
-    # just narrative value: strong corroboration convicts outright; weak
-    # corroboration produces the one deliberately-non-binary outcome
-    # ('suspicious') CGEF allows, reserved for genuine signal
-    # disagreement rather than the default result for most samples.
+    # Verdict decision when a real trained classifier's score is available
+    # (docs/ML_CLASSIFIER_PLAN.md S11 "simple", the default; S10 "cgef",
+    # opt-in). A named threat-intel override wins regardless of mode -- a
+    # specific signature match is stronger evidence than any generic
+    # probability. Otherwise, dispatch on state.fusion_mode.
     ember_p = _ember_score(state)
     if ember_p is not None:
         ember_finding = next((f for f in grounded
@@ -210,16 +252,10 @@ def build_verdict(state: AnalysisState) -> Verdict:
 
         if _named_threat_intel_override(state, grounded):
             verdict, conf = "malicious", 0.9
-        elif ember_p <= _EMBER_CONFIDENT_BENIGN_MAX:
-            verdict, conf = "benign", round(min(0.5 + (1 - ember_p) / 2, 0.99), 2)
-        elif ember_p >= _EMBER_CONFIDENT_MALICIOUS_MIN:
-            verdict, conf = "malicious", round(min(0.5 + ember_p / 2, 0.99), 2)
-        elif corroborated:
-            verdict, conf = "malicious", round(min(0.5 + ember_p / 2, 0.9), 2)
-        elif categories:
-            verdict, conf = "suspicious", 0.5
+        elif state.fusion_mode == "cgef":
+            verdict, conf = _ember_decide_cgef(ember_p, corroborated, categories)
         else:
-            verdict, conf = "benign", round(min(0.5 + (1 - ember_p) / 2, 0.9), 2)
+            verdict, conf = _ember_decide_simple(ember_p)
 
         return Verdict(
             sample_sha256=state.sample.sha256, verdict=verdict, confidence=conf,
