@@ -7,13 +7,54 @@ from .contracts import EgressPolicy, Provenance
 from .pipeline import analyze
 
 
+_RESEARCH_CMDS = {"evaluate", "make-manifest", "suggest-verdict",
+                  "ablate-critic", "family-attribution", "ablate-llm"}
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+
+    # Documented top-level surface: `analyze` (single sample) and `web`
+    # (local UI) are primary; `research <subcommand>` groups the six
+    # measurement/ablation tools below (still needed for the paper's
+    # methodology section, just out of the way of everyday use). Old flat
+    # invocations (`mal-agent evaluate ...`, bare `mal-agent <path>`) must
+    # keep working unmodified -- ~30 existing tests call them directly,
+    # and test_normal_analyze_invocation_still_works_unaffected documents
+    # a prior CLI-shadowing bug this must not reintroduce. Stripping the
+    # `research`/`analyze` wrapper and falling through to the exact same
+    # unmodified per-command blocks below (rather than a parallel
+    # subparser tree) guarantees zero behavioral drift between the old
+    # and new invocation forms -- there is only one code path per command.
+    if argv and argv[0] == "research":
+        if len(argv) < 2 or argv[1] not in _RESEARCH_CMDS:
+            print("usage: mal-agent research <subcommand> [args...]", file=sys.stderr)
+            print(f"subcommands: {', '.join(sorted(_RESEARCH_CMDS))}", file=sys.stderr)
+            return 2
+        argv = argv[1:]
+    elif argv and argv[0] == "analyze":
+        argv = argv[1:]
+
     if argv and argv[0] == "doctor":
         from .doctor import exit_code, format_report, run_checks
         results = run_checks()
         print(format_report(results))
         return exit_code(results)
+
+    if argv and argv[0] == "web":
+        try:
+            from .web_cli import run as run_web
+        except ImportError as e:
+            print(f"error: the local web UI isn't available: {e}", file=sys.stderr)
+            print("install its extra dependencies with: pip install -e \".[web]\"",
+                 file=sys.stderr)
+            return 3
+        wp = argparse.ArgumentParser(prog="mal-agent web", description="Launch the local web UI")
+        wp.add_argument("--host", default="127.0.0.1")
+        wp.add_argument("--port", type=int, default=8765)
+        wargs = wp.parse_args(argv[1:])
+        run_web(host=wargs.host, port=wargs.port)
+        return 0
 
     if argv and argv[0] == "evaluate":
         from . import evaluation
