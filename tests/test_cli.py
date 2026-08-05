@@ -260,6 +260,82 @@ def test_analyze_subcommand_threads_fusion_mode_through(monkeypatch, tmp_path):
     assert captured_kwargs["fusion_mode"] == "cgef"
 
 
+def test_explicit_analyze_subcommand_form_behaves_like_bare_path(monkeypatch, tmp_path):
+    """mal-agent analyze <path> (the new documented form) must reach the
+    exact same code path as bare mal-agent <path> (the pre-existing
+    form, which ~30 tests already exercise directly and must keep
+    working unmodified)."""
+    captured_kwargs = {}
+
+    class _FakeAudit:
+        def verify(self):
+            return True
+        records = []
+
+    class _FakeSample:
+        sha256 = "a" * 64
+
+    class _FakeState:
+        sample = _FakeSample()
+
+    def _fake_analyze(path, **kw):
+        captured_kwargs["path"] = path
+        captured_kwargs.update(kw)
+        from malagent.contracts import Verdict
+        return _FakeState(), Verdict(sample_sha256="a" * 64, verdict="benign"), "md", "txt", "html", _FakeAudit()
+
+    monkeypatch.setattr("malagent.cli.analyze", _fake_analyze)
+    p = tmp_path / "sample.bin"
+    p.write_bytes(b"MZ" + b"\x00" * 64)
+
+    rc = main(["analyze", str(p), "--out", str(tmp_path / "out")])
+    assert rc == 0
+    assert captured_kwargs["path"] == str(p)
+    assert captured_kwargs["fusion_mode"] == "simple"
+
+
+def test_research_evaluate_reaches_same_code_path_as_flat_evaluate(monkeypatch, tmp_path):
+    """mal-agent research evaluate <manifest> (the new documented,
+    grouped form) must reach the exact same evaluation.evaluate() call
+    as the old flat mal-agent evaluate <manifest> form -- both must keep
+    working, with zero behavioral drift between them."""
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,label\n/a,benign\n")
+
+    captured_kwargs = {}
+    import malagent.evaluation as evaluation_module
+
+    def _fake_evaluate(samples, **kw):
+        captured_kwargs.update(kw)
+        return _FakeEvalReport()
+
+    monkeypatch.setattr(evaluation_module, "evaluate", _fake_evaluate)
+    monkeypatch.setattr(evaluation_module, "format_report", lambda report: "x")
+
+    rc = main(["research", "evaluate", str(manifest), "--fusion-mode", "cgef"])
+    assert rc == 0
+    assert captured_kwargs["fusion_mode"] == "cgef"
+
+
+def test_research_with_unknown_subcommand_errors_cleanly(capsys):
+    rc = main(["research", "not-a-real-subcommand"])
+    assert rc == 2
+    captured = capsys.readouterr()
+    assert "subcommand" in captured.err.lower()
+
+
+def test_research_with_no_subcommand_errors_cleanly(capsys):
+    rc = main(["research"])
+    assert rc == 2
+
+
+def test_web_subcommand_errors_cleanly_without_web_extras_installed():
+    """The web UI isn't built yet (Phase 8, docs/TODO.md) -- this must
+    fail with a clear message and non-zero exit, never a crash/traceback."""
+    rc = main(["web"])
+    assert rc != 0
+
+
 class _FakeAblationReport:
     def __init__(self):
         self.results = [1, 2]
