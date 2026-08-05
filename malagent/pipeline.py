@@ -37,7 +37,8 @@ def analyze(path: str, *, provenance: Optional[Provenance] = None,
             policy: Optional[EgressPolicy] = None, enable_models: bool = False,
             local_provider: str = "ollama", local_model: str = "qwen2.5-coder:7b",
             escalation_provider: Optional[str] = "anthropic",
-            escalation_model: Optional[str] = "claude-sonnet-4-6"):
+            escalation_model: Optional[str] = "claude-sonnet-4-6",
+            fusion_mode: str = "simple"):
     repo = get_repository()
     run_id = new_run_id()
     audit = AuditLog(run_id, repo)
@@ -47,7 +48,8 @@ def analyze(path: str, *, provenance: Optional[Provenance] = None,
               source=sample.provenance.source, ticket=sample.provenance.ticket_id)
 
     state = AnalysisState(run_id=run_id, sample=sample,
-                          policy=policy or EgressPolicy(), budget=StepBudget())
+                          policy=policy or EgressPolicy(), budget=StepBudget(),
+                          fusion_mode=fusion_mode)
     router = _maybe_router(state, audit, local_provider, local_model,
                            escalation_provider, escalation_model, enable_models)
     state = run_pipeline(state, router=router, audit=audit)

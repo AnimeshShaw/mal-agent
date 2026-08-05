@@ -144,6 +144,14 @@ class AnalysisState(BaseModel):
     # StageResult, since a single named stage can append several StageResult
     # records (e.g. triage_agent runs 5 tools, each appending its own).
     stage_durations_ms: dict[str, float] = Field(default_factory=dict)
+    # Verdict decision method when an EMBER score is available (docs/
+    # ML_CLASSIFIER_PLAN.md S11). "simple" (default): EMBER alone decides
+    # malicious/benign, binary, no gray zone -- the other triage tools become
+    # evidence/explanation only. "cgef": the original Confidence-Gated
+    # Evidence Fusion mode (S10) -- kept as an opt-in research path, not
+    # deleted, since it's still the mechanism to revisit for the "does fusion
+    # ever correct a wrong EMBER call" question.
+    fusion_mode: Literal["simple", "cgef"] = "simple"
 
 
 class Verdict(BaseModel):

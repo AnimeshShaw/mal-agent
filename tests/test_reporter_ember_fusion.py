@@ -61,7 +61,10 @@ def _vt_finding_and_evidence(malicious_count=10):
 
 
 def _state_with(findings, evidence):
-    s = AnalysisState(run_id="r1", sample=_sample())
+    # This whole file exercises CGEF (docs/ML_CLASSIFIER_PLAN.md §10), now an
+    # opt-in mode -- "simple" (§11) is the default and behaves differently in
+    # the gray zone, so every state built here must explicitly opt into cgef.
+    s = AnalysisState(run_id="r1", sample=_sample(), fusion_mode="cgef")
     s.findings = findings
     s.evidence = evidence
     s.stage_results = [StageResult(stage="triage", status="ok")]
