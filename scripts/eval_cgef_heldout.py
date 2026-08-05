@@ -63,6 +63,8 @@ def _confusion(rows, key):
 
 
 def main():
+    start = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+
     rows = []
     with open("dataset/manifest_heldout.csv", newline="") as f:
         for r in csv.DictReader(f):
@@ -71,6 +73,8 @@ def main():
     results = []
     total = len(rows)
     for i, (path, label) in enumerate(rows, start=1):
+        if i < start:
+            continue
         try:
             state, cgef_verdict, *_ = pipeline.analyze(
                 path, enable_models=False, policy=EgressPolicy(allow_cloud=False))
