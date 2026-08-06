@@ -20,6 +20,23 @@ from malagent_web.app import create_app, ensure_default_database_url
 from malagent_web import runs as runs_module
 
 
+class _FakeAudit:
+    def verify(self):
+        return True
+    records = []
+
+
+def _fake_state():
+    """A real AnalysisState (not a bare mock) -- build_tool_report() and
+    other report-building code exercised via GET /api/analyses/{id} need
+    real pydantic-model attributes (stage_results, findings, evidence),
+    not just a `.sample` stub."""
+    from malagent.contracts import AnalysisState, Provenance, Sample
+    sample = Sample(sha256="a" * 64, md5="b" * 32, path="/tmp/fake.bin",
+                    file_type="PE", size=64, provenance=Provenance())
+    return AnalysisState(run_id="fake-run", sample=sample)
+
+
 def _fake_analyze_factory(gate: threading.Event, verdict_word="malicious"):
     """A fake pipeline.analyze() that blocks on `gate` until the test
     releases it -- lets a test assert the HTTP response returns before
@@ -28,19 +45,8 @@ def _fake_analyze_factory(gate: threading.Event, verdict_word="malicious"):
         gate.wait(timeout=5)
         from malagent.contracts import Verdict
 
-        class _FakeAudit:
-            def verify(self):
-                return True
-            records = []
-
-        class _FakeSample:
-            sha256 = "a" * 64
-
-        class _FakeState:
-            sample = _FakeSample()
-
         v = Verdict(sample_sha256="a" * 64, verdict=verdict_word, confidence=0.9)
-        return _FakeState(), v, "md report", "txt report", "<html>html report</html>", _FakeAudit()
+        return _fake_state(), v, "md report", "txt report", "<html>html report</html>", _FakeAudit()
     return _fake_analyze
 
 
@@ -137,6 +143,37 @@ def test_get_analysis_transitions_to_complete(client, monkeypatch, tmp_path):
     assert got.json()["verdict"]["verdict"] == "benign"
 
 
+def test_get_analysis_includes_structured_tool_report_and_narrative_once_complete(client, monkeypatch, tmp_path):
+    """The frontend renders ToolCard components from this structured data
+    (build_tool_report(), Phase 2's per-tool redesign) rather than
+    re-implementing reporter.py's direction/indication logic in TypeScript."""
+    from malagent.contracts import Verdict
+    from malagent.reporter import TOOL_DESCRIPTIONS
+
+    def _fake_analyze(path, **kw):
+        state = _fake_state()
+        v = Verdict(sample_sha256="a" * 64, verdict="benign", confidence=0.8)
+        return state, v, "md", "txt", "<html></html>", _FakeAudit()
+
+    monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze)
+
+    resp = client.post("/api/analyses", data={"path": _sample_path(tmp_path)})
+    run_id = resp.json()["run_id"]
+
+    deadline = time.monotonic() + 5
+    body = None
+    while time.monotonic() < deadline:
+        body = client.get(f"/api/analyses/{run_id}").json()
+        if body["status"] == "complete":
+            break
+        time.sleep(0.02)
+
+    assert body["status"] == "complete"
+    assert [t["tool"] for t in body["tools"]] == list(TOOL_DESCRIPTIONS.keys())
+    assert all(t["status"] == "skipped" for t in body["tools"])  # no StageResults on the fake state
+    assert body["narrative"] is None  # no behavioral_analyst finding on the fake state
+
+
 def test_get_unknown_run_id_returns_404(client):
     resp = client.get("/api/analyses/does-not-exist")
     assert resp.status_code == 404
@@ -164,18 +201,7 @@ def test_uploaded_filename_path_traversal_is_neutralized(client, monkeypatch, tm
         captured["path"] = path
         from malagent.contracts import Verdict
 
-        class _FakeAudit:
-            def verify(self):
-                return True
-            records = []
-
-        class _FakeSample:
-            sha256 = "a" * 64
-
-        class _FakeState:
-            sample = _FakeSample()
-
-        return (_FakeState(), Verdict(sample_sha256="a" * 64, verdict="benign"),
+        return (_fake_state(), Verdict(sample_sha256="a" * 64, verdict="benign"),
                "md", "txt", "<html></html>", _FakeAudit())
 
     monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze)
@@ -252,19 +278,8 @@ def _fake_analyze_with_progress(progress_lines, gate: threading.Event):
         gate.wait(timeout=5)
         from malagent.contracts import Verdict
 
-        class _FakeAudit:
-            def verify(self):
-                return True
-            records = []
-
-        class _FakeSample:
-            sha256 = "a" * 64
-
-        class _FakeState:
-            sample = _FakeSample()
-
         v = Verdict(sample_sha256="a" * 64, verdict="malicious", confidence=0.9)
-        return _FakeState(), v, "md", "txt", "<html></html>", _FakeAudit()
+        return _fake_state(), v, "md", "txt", "<html></html>", _FakeAudit()
     return _fake_analyze
 
 

@@ -627,6 +627,71 @@ def render_tool_narrative(state: AnalysisState) -> str:
     return "\n".join(L)
 
 
+def build_tool_report(state: AnalysisState) -> list[dict]:
+    """JSON-serializable equivalent of render_tool_narrative()'s canonical
+    per-tool accounting, for the web UI (docs/TODO.md Phase 8) to render
+    its own ToolCard components against. Deliberately reuses the exact
+    same helpers (_finding_indication, _finding_direction, TOOL_DESCRIPTIONS,
+    is_known_good_match) as the text/HTML reports, so the web UI can never
+    drift from what report.txt says -- this stays the single source of
+    truth for "what does this finding indicate and which way does it
+    lean," never duplicated in TypeScript."""
+    by_tool: dict[str, list] = {}
+    for sr in state.stage_results:
+        by_tool.setdefault(sr.tool or f"(unlabeled, stage={sr.stage})", []).append(sr)
+
+    known_good_hit = is_known_good_match(state)
+
+    def _entry_for(tool_name: str, sr) -> dict:
+        return {
+            "tool": tool_name,
+            "stage": sr.stage,
+            "purpose": TOOL_DESCRIPTIONS.get(tool_name, "(no static description available for this tool)"),
+            "status": sr.status,
+            "reason": None,
+            "notes": sr.notes,
+            "unresolved": list(sr.unresolved),
+            "findings": [
+                {
+                    "claim": f.claim,
+                    "severity": f.severity,
+                    "confidence": f.confidence,
+                    "indicates": _finding_indication(f, state),
+                    "direction": _finding_direction(f, state),
+                }
+                for f in sr.findings
+            ],
+        }
+
+    report: list[dict] = []
+    for tool_name in TOOL_DESCRIPTIONS:
+        srs = by_tool.pop(tool_name, None)
+        if srs:
+            for sr in srs:
+                report.append(_entry_for(tool_name, sr))
+            continue
+        reason = ("sample matched the known-good hash allowlist, so the rest of "
+                 "triage (and static/dynamic analysis) never ran"
+                 if known_good_hit else
+                 "not attempted: no StageResult was recorded for this tool during this run")
+        report.append({
+            "tool": tool_name,
+            "stage": None,
+            "purpose": TOOL_DESCRIPTIONS.get(tool_name, "(no static description available for this tool)"),
+            "status": "skipped",
+            "reason": reason,
+            "notes": None,
+            "unresolved": [],
+            "findings": [],
+        })
+
+    for tool_name, srs in by_tool.items():
+        for sr in srs:
+            report.append(_entry_for(tool_name, sr))
+
+    return report
+
+
 def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, str]) -> str:
     """Mandatory, unabridged detailed report -- written on every run, not
     gated behind --out. Both a narrative half (write_narrative's prose)

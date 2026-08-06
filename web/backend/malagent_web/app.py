@@ -92,7 +92,14 @@ def create_app() -> FastAPI:
         if run.status == "error":
             result["error"] = run.error
         if run.status == "complete" and run.verdict is not None:
+            from malagent.reporter import build_tool_report
+
             result["verdict"] = run.verdict.model_dump(mode="json")
+            result["tools"] = build_tool_report(run.state)
+            narrative_finding = next(
+                (f for f in run.state.findings
+                 if f.source_stage == "behavioral_analyst" and f.grounded), None)
+            result["narrative"] = narrative_finding.claim if narrative_finding else None
         return result
 
     @app.get("/api/analyses/{run_id}/events")
