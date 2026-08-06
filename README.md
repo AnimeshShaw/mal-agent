@@ -86,6 +86,52 @@ Ghidra/JDK/Ollama/Postgres: `scripts/install-full.ps1`/`.sh`. Full detail
 on both paths, plus a troubleshooting section built from real bugs hit
 during this project's own setup: **[docs/SETUP.md](docs/SETUP.md)**.
 
+### Web UI
+
+An interactive, local alternative to the CLI's static report files —
+same verdict, same per-tool honesty (every tool shown as ran/skipped/
+error with a real reason, every finding tagged supports-malicious/
+supports-benign/neutral), live in the browser instead of a text dump.
+
+```bash
+pip install -e ".[web]"
+cd web/frontend && npm install && npm run build && cd ../..
+mal-agent web
+```
+
+Serves the API and the built frontend from one process on one port
+(default `http://127.0.0.1:8765`) — `--host`/`--port` to change either.
+Persists runs to a local SQLite file (`malagent_web.db`) by default, not
+Postgres, so no server process is required for a single-operator local
+tool; set `DATABASE_URL` yourself to opt into Postgres instead. Not yet
+built: `npm run dev` is the frontend's own hot-reload dev server (proxies
+`/api` to the backend) if you're modifying `web/frontend/src/`.
+
+### CLI reference
+
+Two commands cover everyday use:
+
+```bash
+mal-agent analyze path/to/sample [--fusion-mode simple|cgef] [--out ./out]
+mal-agent web [--host 127.0.0.1] [--port 8765]
+```
+
+`mal-agent path/to/sample` (no `analyze` keyword) still works — the
+positional form above is the original, still-supported invocation.
+The measurement/ablation tools that produced this project's real
+calibration and ablation numbers (`evaluate`, `make-manifest`,
+`suggest-verdict`, `ablate-critic`, `family-attribution`, `ablate-llm`)
+are grouped under `research`, needed for reproducing those numbers, not
+everyday analysis:
+
+```bash
+mal-agent research evaluate dataset/manifest.csv --fusion-mode cgef
+mal-agent research ablate-llm dataset/manifest.csv
+```
+
+Old flat forms (`mal-agent evaluate ...` without the `research` prefix)
+still work too, as undocumented-but-functional aliases.
+
 ## How it works
 
 ```mermaid
