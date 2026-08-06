@@ -63,6 +63,17 @@ floss = [
   "flare-floss>=3.1",
 ]
 dev = ["pytest>=8.0"]
+web = [
+  # Backend for `mal-agent web` (docs/TODO.md Phase 8) -- web/backend/
+  # is a separate sibling package (see malagent/web_cli.py), not part of
+  # the malagent distribution, so these are only pulled in when this
+  # extra is requested. python-multipart is required by FastAPI's
+  # Form(...)/UploadFile handling (file uploads + form fields on
+  # POST /api/analyses), not optional despite not being imported directly.
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "python-multipart>=0.0.9",
+]
 
 [project.scripts]
 mal-agent = "malagent.cli:main"

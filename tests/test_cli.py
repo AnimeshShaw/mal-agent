@@ -329,9 +329,41 @@ def test_research_with_no_subcommand_errors_cleanly(capsys):
     assert rc == 2
 
 
-def test_web_subcommand_errors_cleanly_without_web_extras_installed():
-    """The web UI isn't built yet (Phase 8, docs/TODO.md) -- this must
-    fail with a clear message and non-zero exit, never a crash/traceback."""
+def test_web_subcommand_threads_host_and_port_through(monkeypatch):
+    """malagent.web_cli now exists (Phase 8 shipped) -- `mal-agent web`
+    must reach its run() with the right host/port. Mocked so this test
+    doesn't actually start a real (blocking) uvicorn server -- an earlier
+    version of this test predated web_cli's existence and asserted the
+    graceful-degradation error path instead; once web_cli was added, that
+    assumption silently broke and the un-mocked call blocked the whole
+    test suite on a real server that never returns. See
+    test_web_subcommand_errors_cleanly_when_extras_genuinely_missing
+    below for that graceful-degradation coverage instead."""
+    captured = {}
+    monkeypatch.setattr("malagent.web_cli.run", lambda host, port: captured.update(host=host, port=port))
+
+    rc = main(["web", "--host", "0.0.0.0", "--port", "9999"])
+    assert rc == 0
+    assert captured == {"host": "0.0.0.0", "port": 9999}
+
+
+def test_web_subcommand_errors_cleanly_when_extras_genuinely_missing(monkeypatch):
+    """The web UI's dependencies (fastapi/uvicorn, the 'web' extra)
+    aren't always installed -- this must fail with a clear message and
+    non-zero exit, never a crash/traceback or a hang."""
+    import builtins
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        # cli.py does a relative `from .web_cli import run` -- __import__
+        # receives the bare submodule name ("web_cli") with a relative
+        # level, not the fully-qualified "malagent.web_cli"; matching
+        # both forms keeps this robust to either import style.
+        if name == "web_cli" or name == "malagent.web_cli" or name.endswith(".web_cli"):
+            raise ImportError("simulated: fastapi/uvicorn not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
     rc = main(["web"])
     assert rc != 0
 
