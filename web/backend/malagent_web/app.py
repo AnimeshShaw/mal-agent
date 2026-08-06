@@ -11,9 +11,16 @@ from tempfile import mkdtemp
 from typing import Optional
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import runs
+
+# web/frontend/dist, built via `npm run build` in web/frontend/ -- not
+# committed (gitignored, like any build output). Serving it from the same
+# process as the API means `mal-agent web` is one command/one port, not
+# two separate dev servers to run in production.
+_DEFAULT_FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 # How often the SSE generator checks for new progress lines. Plain polling
 # of an in-process list, not a real queue/condition-variable wakeup -- the
@@ -44,8 +51,9 @@ def ensure_default_database_url() -> None:
     os.environ.setdefault("DATABASE_URL", f"sqlite:///{_DEFAULT_DB_PATH}")
 
 
-def create_app() -> FastAPI:
+def create_app(frontend_dist: Optional[Path] = None) -> FastAPI:
     app = FastAPI(title="mal-agent web")
+    frontend_dist = frontend_dist or _DEFAULT_FRONTEND_DIST
 
     @app.get("/api/health")
     def health():
@@ -143,6 +151,26 @@ def create_app() -> FastAPI:
         if run is None or run.status != "complete":
             raise HTTPException(status_code=404, detail="report not ready")
         return run
+
+    # Serve the built frontend, when present, from the same process/port as
+    # the API. Registered last so the specific /api/* routes above always
+    # win; the catch-all below only ever matches what nothing else did.
+    assets_dir = frontend_dist / "assets"
+    if frontend_dist.is_dir() and assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+
+        @app.get("/{full_path:path}")
+        async def spa_fallback(full_path: str):
+            # A client-side route (react-router) reloaded directly, e.g.
+            # /report/<uuid> -- there's no file at that path, serve the SPA
+            # shell and let the frontend router take it from there. An
+            # unmatched /api/* path is a real 404, not a routing fallback.
+            if full_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="not found")
+            index = frontend_dist / "index.html"
+            if not index.is_file():
+                raise HTTPException(status_code=404, detail="not found")
+            return FileResponse(index)
 
     return app
 
