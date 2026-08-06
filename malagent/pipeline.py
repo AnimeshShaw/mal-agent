@@ -1,7 +1,7 @@
 """Top-level entry: ingest -> analyze -> persist -> verdict + report."""
 from __future__ import annotations
 import os
-from typing import Optional
+from typing import Callable, Optional
 from .audit import AuditLog
 from .contracts import AnalysisState, EgressPolicy, Provenance, StepBudget, Verdict
 from .ingest import ingest, new_run_id
@@ -38,7 +38,8 @@ def analyze(path: str, *, provenance: Optional[Provenance] = None,
             local_provider: str = "ollama", local_model: str = "qwen2.5-coder:7b",
             escalation_provider: Optional[str] = "anthropic",
             escalation_model: Optional[str] = "claude-sonnet-4-6",
-            fusion_mode: str = "simple"):
+            fusion_mode: str = "simple",
+            progress_cb: Optional[Callable[[str], None]] = None):
     repo = get_repository()
     run_id = new_run_id()
     audit = AuditLog(run_id, repo)
@@ -52,7 +53,7 @@ def analyze(path: str, *, provenance: Optional[Provenance] = None,
                           fusion_mode=fusion_mode)
     router = _maybe_router(state, audit, local_provider, local_model,
                            escalation_provider, escalation_model, enable_models)
-    state = run_pipeline(state, router=router, audit=audit)
+    state = run_pipeline(state, router=router, audit=audit, progress_cb=progress_cb)
 
     verdict = build_verdict(state)
     audit.log("verdict", verdict=verdict.verdict, confidence=verdict.confidence)

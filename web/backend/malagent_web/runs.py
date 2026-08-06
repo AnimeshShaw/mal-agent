@@ -30,6 +30,10 @@ class Run:
     report_md: Optional[str] = None
     report_txt: Optional[str] = None
     report_html: Optional[str] = None
+    # Progress lines pushed by pipeline.analyze()'s progress_cb -- appended
+    # to, never replaced, so the SSE endpoint can replay everything-so-far
+    # to a client that connects (or reconnects) after the run has started.
+    progress: list[str] = field(default_factory=list)
 
 
 _runs: dict[str, Run] = {}
@@ -39,6 +43,8 @@ _lock = threading.Lock()
 def _execute(run: Run, path: str, kwargs: dict) -> None:
     run.status = "running"
     try:
+        kwargs = dict(kwargs)
+        kwargs["progress_cb"] = run.progress.append
         state, verdict, report_md, report_txt, report_html, audit = pipeline_module.analyze(
             path, **kwargs)
         run.state = state

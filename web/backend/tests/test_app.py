@@ -12,6 +12,7 @@ pytest.importorskip("fastapi")
 import os
 import threading
 import time
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -151,6 +152,55 @@ def test_post_analyses_rejects_nonexistent_path(client):
     assert resp.status_code == 400
 
 
+def test_uploaded_filename_path_traversal_is_neutralized(client, monkeypatch, tmp_path):
+    """file.filename is client-supplied and untrusted -- a crafted name
+    with traversal sequences or an absolute path must not let the upload
+    escape the server-controlled temp directory or overwrite an arbitrary
+    file elsewhere on disk. Regression test for a real path-traversal bug
+    found by automated review during development."""
+    captured = {}
+
+    def _fake_analyze(path, **kw):
+        captured["path"] = path
+        from malagent.contracts import Verdict
+
+        class _FakeAudit:
+            def verify(self):
+                return True
+            records = []
+
+        class _FakeSample:
+            sha256 = "a" * 64
+
+        class _FakeState:
+            sample = _FakeSample()
+
+        return (_FakeState(), Verdict(sample_sha256="a" * 64, verdict="benign"),
+               "md", "txt", "<html></html>", _FakeAudit())
+
+    monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze)
+
+    marker_dir = tmp_path / "should_not_be_touched"
+    marker_dir.mkdir()
+    canary = marker_dir / "canary.txt"
+    canary.write_text("original contents")
+
+    malicious_name = "../" * 6 + str(canary).lstrip("/").replace("\\", "/")
+    resp = client.post(
+        "/api/analyses",
+        files={"file": (malicious_name, b"attacker-controlled bytes", "application/octet-stream")})
+    assert resp.status_code == 200
+
+    deadline = time.monotonic() + 5
+    while "path" not in captured and time.monotonic() < deadline:
+        time.sleep(0.02)
+
+    assert canary.read_text() == "original contents", "path traversal wrote outside the temp dir"
+    written_path = Path(captured["path"])
+    assert ".." not in written_path.parts
+    assert written_path.name in ("canary.txt", "passwd")  # just the basename survives, no traversal
+
+
 def test_report_endpoints_serve_rendered_reports_once_complete(client, monkeypatch, tmp_path):
     gate = threading.Event()
     gate.set()  # complete immediately -- this test only cares about the report bytes
@@ -189,3 +239,56 @@ def test_report_endpoint_404s_before_run_completes(client, monkeypatch, tmp_path
     assert txt.status_code == 404
 
     gate.set()
+
+
+def _fake_analyze_with_progress(progress_lines, gate: threading.Event):
+    """A fake pipeline.analyze() that invokes progress_cb (like the real
+    orchestrator does) before completing -- exercises the SSE endpoint's
+    actual job: relaying progress_cb output to the browser."""
+    def _fake_analyze(path, progress_cb=None, **kw):
+        for line in progress_lines:
+            if progress_cb is not None:
+                progress_cb(line)
+        gate.wait(timeout=5)
+        from malagent.contracts import Verdict
+
+        class _FakeAudit:
+            def verify(self):
+                return True
+            records = []
+
+        class _FakeSample:
+            sha256 = "a" * 64
+
+        class _FakeState:
+            sample = _FakeSample()
+
+        v = Verdict(sample_sha256="a" * 64, verdict="malicious", confidence=0.9)
+        return _FakeState(), v, "md", "txt", "<html></html>", _FakeAudit()
+    return _fake_analyze
+
+
+def test_events_endpoint_streams_progress_lines_pushed_via_progress_cb(client, monkeypatch, tmp_path):
+    gate = threading.Event()
+    gate.set()  # let it complete immediately once progress lines are pushed
+    lines = ["[pipeline] stage 'triage': running...", "[pipeline] stage 'triage': done in 5ms (status=ok)"]
+    monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze_with_progress(lines, gate))
+
+    resp = client.post("/api/analyses", data={"path": _sample_path(tmp_path)})
+    run_id = resp.json()["run_id"]
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if client.get(f"/api/analyses/{run_id}").json()["status"] == "complete":
+            break
+        time.sleep(0.02)
+
+    events_resp = client.get(f"/api/analyses/{run_id}/events")
+    assert events_resp.status_code == 200
+    for line in lines:
+        assert line in events_resp.text
+
+
+def test_events_endpoint_404s_for_unknown_run(client):
+    resp = client.get("/api/analyses/does-not-exist/events")
+    assert resp.status_code == 404

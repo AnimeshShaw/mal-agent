@@ -4,15 +4,22 @@ directly -- no analysis logic duplicated here. Runs each analysis in a
 background thread (see runs.py) so POST /api/analyses returns immediately
 instead of blocking on a Ghidra-backed run that can take minutes."""
 from __future__ import annotations
+import asyncio
 import os
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Optional
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 from . import runs
+
+# How often the SSE generator checks for new progress lines. Plain polling
+# of an in-process list, not a real queue/condition-variable wakeup -- the
+# simplest thing that works for a single-operator local tool; 200ms is
+# imperceptible for a human watching a multi-second-to-multi-minute run.
+_SSE_POLL_INTERVAL_S = 0.2
 
 # malagent.pipeline.analyze() persists every run via malagent.store.get_repository(),
 # which reads DATABASE_URL: unset -> in-memory (doesn't survive past a single
@@ -53,8 +60,14 @@ def create_app() -> FastAPI:
         no_cloud: bool = Form(default=False),
     ):
         if file is not None and file.filename:
+            # file.filename is client-supplied and untrusted -- take only
+            # its final path component (Path.name strips any leading
+            # directory segments/drive letters) so a crafted name like
+            # "../../etc/passwd" or an absolute path can't escape dest_dir
+            # or overwrite an arbitrary file elsewhere on disk.
+            safe_name = Path(file.filename).name or "upload.bin"
             dest_dir = Path(mkdtemp(prefix="malagent_web_"))
-            target = dest_dir / file.filename
+            target = dest_dir / safe_name
             target.write_bytes(await file.read())
             target_path = str(target)
         elif path:
@@ -81,6 +94,26 @@ def create_app() -> FastAPI:
         if run.status == "complete" and run.verdict is not None:
             result["verdict"] = run.verdict.model_dump(mode="json")
         return result
+
+    @app.get("/api/analyses/{run_id}/events")
+    async def get_events(run_id: str):
+        run = runs.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+
+        async def _stream():
+            sent = 0
+            while True:
+                lines = run.progress[sent:]
+                for line in lines:
+                    yield f"data: {line}\n\n"
+                sent += len(lines)
+                if run.status in ("complete", "error"):
+                    yield f"event: done\ndata: {run.status}\n\n"
+                    return
+                await asyncio.sleep(_SSE_POLL_INTERVAL_S)
+
+        return StreamingResponse(_stream(), media_type="text/event-stream")
 
     @app.get("/api/analyses/{run_id}/report.txt", response_class=PlainTextResponse)
     def get_report_txt(run_id: str):
