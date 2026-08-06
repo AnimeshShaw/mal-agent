@@ -172,6 +172,7 @@ def test_get_analysis_includes_structured_tool_report_and_narrative_once_complet
     assert [t["tool"] for t in body["tools"]] == list(TOOL_DESCRIPTIONS.keys())
     assert all(t["status"] == "skipped" for t in body["tools"])  # no StageResults on the fake state
     assert body["narrative"] is None  # no behavioral_analyst finding on the fake state
+    assert "fusion_mode_label" in body and body["fusion_mode_label"]
 
 
 def test_get_unknown_run_id_returns_404(client):

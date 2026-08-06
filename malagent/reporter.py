@@ -213,7 +213,7 @@ def _ember_decide_simple(ember_p: float) -> tuple[str, float]:
     return verdict, conf
 
 
-def _fusion_mode_label(state: AnalysisState) -> str:
+def fusion_mode_label(state: AnalysisState) -> str:
     """Human-readable statement of which mechanism actually decided this
     run's verdict -- the single most important transparency line in the
     report, since the answer differs by run (and by whether EMBER was
@@ -727,7 +727,7 @@ def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, st
     L.append(thin)
     L.append(f"Verdict:            {v.verdict.upper()}")
     L.append(f"Confidence:         {v.confidence}")
-    L.append(f"Fusion mode:        {_fusion_mode_label(state)}")
+    L.append(f"Fusion mode:        {fusion_mode_label(state)}")
     L.append(f"Evidence complete:  {v.evidence_complete}")
     L.append(f"ATT&CK techniques:  {', '.join(v.attack_techniques) if v.attack_techniques else '(none)'}")
     L.append(f"Family:             {v.family or '(undetermined)'}")
@@ -941,7 +941,7 @@ def render_html(state: AnalysisState, v: Verdict, audit,
     parts.append(f'<div class="verdict">{_e(v.verdict.upper())}</div>')
     parts.append(f'<div class="confidence">Confidence: {_e(v.confidence)} &nbsp;|&nbsp; '
                  f'Evidence complete: {_e(v.evidence_complete)} &nbsp;|&nbsp; '
-                 f'Fusion mode: {_e(_fusion_mode_label(state))}</div>')
+                 f'Fusion mode: {_e(fusion_mode_label(state))}</div>')
     parts.append('</div>')
 
     parts.append('<div class="meta">')
@@ -1073,7 +1073,7 @@ def render_markdown(state: AnalysisState, v: Verdict) -> str:
     L.append("")
     L.append(f"**Verdict:** {v.verdict.upper()}  |  **Confidence:** {v.confidence}  "
              f"|  **Evidence complete:** {v.evidence_complete}")
-    L.append(f"**Fusion mode:** {_fusion_mode_label(state)}")
+    L.append(f"**Fusion mode:** {fusion_mode_label(state)}")
     prov = state.sample.provenance
     L.append(f"**Sample:** {state.sample.file_type}, {state.sample.size} bytes  "
              f"|  **Source:** {prov.source}"

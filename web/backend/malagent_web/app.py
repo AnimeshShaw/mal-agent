@@ -92,9 +92,10 @@ def create_app() -> FastAPI:
         if run.status == "error":
             result["error"] = run.error
         if run.status == "complete" and run.verdict is not None:
-            from malagent.reporter import build_tool_report
+            from malagent.reporter import build_tool_report, fusion_mode_label
 
             result["verdict"] = run.verdict.model_dump(mode="json")
+            result["fusion_mode_label"] = fusion_mode_label(run.state)
             result["tools"] = build_tool_report(run.state)
             narrative_finding = next(
                 (f for f in run.state.findings

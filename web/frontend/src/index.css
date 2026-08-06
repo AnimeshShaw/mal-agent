@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/* Design tokens (docs/TODO.md Phase 8 / PRODUCT.md "Operate mode: scanability
+   and correctness outrank visual flourish"). Restrained color strategy:
+   neutrals (zinc) plus one UI accent, with a separate, fixed verdict/status
+   palette carried over verbatim from the existing CLI-generated report.html
+   (malagent/reporter.py's _VERDICT_COLORS/_STATUS_COLORS) so a verdict reads
+   identically whether an analyst is looking at the web UI or an archived
+   .html report. */
+@theme {
+  --color-accent: #2563eb; /* single UI accent: links, focus rings, primary actions -- not used for verdict semantics */
+
+  --color-verdict-malicious: #c0392b;
+  --color-verdict-suspicious: #d68910;
+  --color-verdict-benign: #1e8449;
+  --color-verdict-undetermined: #5d6d7e;
+
+  --color-status-ok: #1e8449;
+  --color-status-partial: #d68910;
+  --color-status-skipped: #7f8c8d;
+  --color-status-error: #c0392b;
+
+  --color-direction-malicious: #c0392b;
+  --color-direction-benign: #1e8449;
+  --color-direction-neutral: #7f8c8d;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+}
