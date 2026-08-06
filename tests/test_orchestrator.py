@@ -43,6 +43,26 @@ def test_runs_static_and_dynamic_normally_without_a_match(monkeypatch, tmp_path)
     assert not any("known-good" in (sr.notes or "") for sr in static_results)
 
 
+def test_progress_cb_receives_the_same_lines_that_get_printed(monkeypatch, tmp_path, capsys):
+    """The web UI (docs/TODO.md Phase 8) streams these lines to the
+    browser via SSE -- progress_cb must see exactly what the CLI prints,
+    and printing must be unaffected whether or not a callback is given."""
+    monkeypatch.delenv("KNOWN_GOOD_HASHES_PATH", raising=False)
+    received = []
+    run_linear(_state(tmp_path, "a" * 64), progress_cb=received.append)
+    printed = capsys.readouterr().out
+    assert received, "progress_cb should have received at least one line"
+    assert any("stage 'triage'" in line for line in received)
+    for line in received:
+        assert line in printed
+
+
+def test_progress_cb_is_optional_and_does_not_change_behavior_when_absent(monkeypatch, tmp_path):
+    monkeypatch.delenv("KNOWN_GOOD_HASHES_PATH", raising=False)
+    state = run_linear(_state(tmp_path, "a" * 64))  # no progress_cb -- must not raise
+    assert state.status == "complete"
+
+
 def test_pipeline_order_places_behavioral_analyst_and_verifier_critic_correctly(monkeypatch, tmp_path):
     """behavioral_analyst runs after ttp; verify runs after behavioral_analyst
     (so it grounds the narrative too); verifier_critic runs last (after
