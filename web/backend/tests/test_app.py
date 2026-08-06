@@ -308,3 +308,52 @@ def test_events_endpoint_streams_progress_lines_pushed_via_progress_cb(client, m
 def test_events_endpoint_404s_for_unknown_run(client):
     resp = client.get("/api/analyses/does-not-exist/events")
     assert resp.status_code == 404
+
+
+def test_app_works_without_a_built_frontend_present(tmp_path):
+    """No web/frontend/dist yet (npm run build never ran) -- the API must
+    still work, not crash on startup."""
+    app = create_app(frontend_dist=tmp_path / "does-not-exist")
+    client = TestClient(app)
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
+    # And a random path is a plain 404, not an attempt to serve a
+    # nonexistent SPA shell.
+    resp = client.get("/report/abc123")
+    assert resp.status_code == 404
+
+
+def test_built_frontend_is_served_at_root_and_spa_routes_fall_back_to_it(tmp_path):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html><body>mal-agent shell</body></html>")
+    (dist / "assets" / "index.js").write_text("console.log('hi')")
+
+    app = create_app(frontend_dist=dist)
+    client = TestClient(app)
+
+    root = client.get("/")
+    assert root.status_code == 200
+    assert "mal-agent shell" in root.text
+
+    # A client-side route with no matching file on disk still serves the
+    # SPA shell (react-router takes over from there), not a 404.
+    deep_link = client.get("/report/some-run-id")
+    assert deep_link.status_code == 200
+    assert "mal-agent shell" in deep_link.text
+
+    asset = client.get("/assets/index.js")
+    assert asset.status_code == 200
+    assert "console.log" in asset.text
+
+
+def test_unmatched_api_path_is_a_real_404_not_the_spa_shell(tmp_path):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html><body>mal-agent shell</body></html>")
+
+    app = create_app(frontend_dist=dist)
+    client = TestClient(app)
+    resp = client.get("/api/not-a-real-endpoint")
+    assert resp.status_code == 404
+    assert "mal-agent shell" not in resp.text
