@@ -16,7 +16,7 @@ import csv
 import statistics
 from dataclasses import dataclass, field
 from typing import Callable, Literal, Optional
-from .contracts import AnalysisState, Provenance
+from .contracts import Provenance
 
 GroundTruth = Literal["benign", "malicious"]
 _VALID_LABELS = {"benign", "malicious"}

@@ -13,7 +13,7 @@ guesswork."""
 from __future__ import annotations
 import struct
 
-from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
+from .contracts import AnalysisState, EvidenceRecord, StageResult
 from .tools import _artifact, _id
 
 _MAGIC_64 = 0xFEEDFACF

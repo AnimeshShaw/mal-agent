@@ -15,8 +15,7 @@ zip-bomb is a real DoS risk for any tool that extracts nested archives)."""
 from __future__ import annotations
 import io
 import zipfile
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
 from .tools import _artifact, _id

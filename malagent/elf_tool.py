@@ -5,11 +5,8 @@ pyelftools; module-level `_ELFFile` (rather than importing inside the
 function) so tests can monkeypatch it the same way tests/test_pe_header_tool.py
 monkeypatches pefile.PE."""
 from __future__ import annotations
-import math
-from collections import Counter
-from typing import Optional
 
-from .contracts import AnalysisState, EvidenceRecord, Finding, IOC, RawArtifact, StageResult
+from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
 from .tools import _artifact, _id, _shannon
 
 try:

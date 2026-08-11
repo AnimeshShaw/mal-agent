@@ -10,7 +10,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from malagent import pipeline as pipeline_module
 

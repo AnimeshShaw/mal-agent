@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from .contracts import AnalysisState, EvidenceRecord, Finding, RawArtifact, StageResult, now
+from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
 from .tools import _artifact, _capa_command, _id
 
 
