@@ -7,7 +7,6 @@ import hashlib
 import math
 import os
 import re
-from typing import Optional
 from .contracts import (AnalysisState, EvidenceRecord, Finding, IOC, RawArtifact,
                         StageResult, now)
 

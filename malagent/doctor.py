@@ -194,7 +194,7 @@ def check_yara_match() -> CheckResult:
     if not p.exists():
         return CheckResult("yara_match", "WARN", f"YARA_RULES_PATH={path} set but missing")
     try:
-        import yara
+        import yara  # noqa: F401
     except Exception:
         return CheckResult("yara_match", "WARN",
                            f"{path} set but 'yara-python' not installed "

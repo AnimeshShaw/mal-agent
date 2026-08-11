@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult, now
+from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
 from .tools import _id
 
 
