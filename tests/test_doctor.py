@@ -266,13 +266,13 @@ def test_ember_configured_but_thrember_not_installed_warns(monkeypatch, tmp_path
 
 # ---------- run_checks / format_report / exit_code ----------
 
-def test_run_checks_returns_all_fourteen_checks():
+def test_run_checks_returns_all_fifteen_checks():
     results = doctor.run_checks()
-    assert len(results) == 14
+    assert len(results) == 15
     assert {r.name for r in results} == {
         "pefile", "capa", "ghidra", "java", "ollama", "floss",
         "cloud_keys", "database", "known_good_allowlist", "ioc_reputation",
-        "yara_match", "die", "virustotal", "ember_classifier",
+        "yara_match", "die", "virustotal", "ember_classifier", "web_ui",
     }
 
 
@@ -318,6 +318,39 @@ def test_die_not_on_path_warns(monkeypatch):
 def test_die_on_path_passes(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/diec")
     result = doctor.check_die()
+    assert result.status == "PASS"
+
+
+# ---------- check_web_ui ----------
+
+def test_web_ui_deps_missing_warns(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name in ("fastapi", "uvicorn"):
+            raise ImportError(f"simulated: {name} not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    result = doctor.check_web_ui()
+    assert result.status == "WARN"
+    assert "web" in result.detail.lower()
+
+
+def test_web_ui_deps_present_but_frontend_not_built_warns(monkeypatch, tmp_path):
+    monkeypatch.setattr("malagent.doctor._frontend_dist_dir", lambda: tmp_path / "does-not-exist")
+    result = doctor.check_web_ui()
+    assert result.status == "WARN"
+    assert "npm" in result.detail.lower() or "build" in result.detail.lower()
+
+
+def test_web_ui_deps_present_and_frontend_built_passes(monkeypatch, tmp_path):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html></html>")
+    monkeypatch.setattr("malagent.doctor._frontend_dist_dir", lambda: dist)
+    result = doctor.check_web_ui()
     assert result.status == "PASS"
 
 

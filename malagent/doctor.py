@@ -230,6 +230,31 @@ def check_ember() -> CheckResult:
     return CheckResult("ember_classifier", "PASS", f"model loaded from {path}")
 
 
+def _frontend_dist_dir() -> Path:
+    """web/frontend/dist -- built via `npm run build` in web/frontend/,
+    not committed (gitignored, like any build output). Factored out so
+    tests can monkeypatch it instead of needing a real npm build on
+    every test run."""
+    return Path(__file__).resolve().parent.parent / "web" / "frontend" / "dist"
+
+
+def check_web_ui() -> CheckResult:
+    try:
+        import fastapi  # noqa: F401
+        import uvicorn  # noqa: F401
+    except Exception:
+        return CheckResult("web_ui", "WARN",
+                           "fastapi/uvicorn not installed -- 'mal-agent web' unavailable "
+                           "(pip install -e \".[web]\")")
+    dist = _frontend_dist_dir()
+    if not (dist / "index.html").is_file():
+        return CheckResult("web_ui", "WARN",
+                           f"backend deps installed but frontend not built at {dist} -- "
+                           "'mal-agent web' would serve the JSON API only, no browser UI "
+                           "(cd web/frontend && npm install && npm run build)")
+    return CheckResult("web_ui", "PASS", f"backend + built frontend ready at {dist}")
+
+
 def run_checks() -> list[CheckResult]:
     return [
         check_pefile(),
@@ -246,6 +271,7 @@ def run_checks() -> list[CheckResult]:
         check_die(),
         check_virustotal(),
         check_ember(),
+        check_web_ui(),
     ]
 
 

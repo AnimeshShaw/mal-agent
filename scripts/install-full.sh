@@ -92,6 +92,26 @@ else
     echo "flare-capa not installed (install.sh should have installed it) -- skipping rules/sigs."
 fi
 
+# Node.js (for the web UI's frontend build -- install.sh already builds
+# it if npm happens to be present; this installs npm itself when missing)
+if ! command -v npm >/dev/null 2>&1; then
+    if confirm "Install Node.js LTS (apt: nodejs/npm / brew: node)?"; then
+        if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y nodejs npm
+        elif command -v brew >/dev/null 2>&1; then
+            brew install node
+        else
+            echo "No known package manager found -- install Node.js LTS manually, then re-run:"
+            echo "  cd web/frontend && npm install && npm run build"
+        fi
+    fi
+else
+    echo "npm already on PATH, skipping Node.js install."
+fi
+if command -v npm >/dev/null 2>&1 && [ ! -d "$REPO_ROOT/web/frontend/dist" ]; then
+    (cd "$REPO_ROOT/web/frontend" && npm install && npm run build)
+fi
+
 # Ollama + model pull
 if ! command -v ollama >/dev/null 2>&1; then
     if confirm "Install Ollama (curl https://ollama.com/install.sh | sh)?"; then
