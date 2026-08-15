@@ -84,6 +84,25 @@ if ($capaVersionLine) {
     Write-Host "flare-capa not installed (install.ps1 should have installed it) -- skipping rules/sigs."
 }
 
+# Node.js (for the web UI's frontend build -- install.ps1 already builds
+# it if npm happens to be present; this installs npm itself when missing)
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    if (Confirm-Step "Install Node.js LTS via winget (needed for the web UI)?") {
+        winget install --id OpenJS.NodeJS.LTS --source winget `
+            --accept-package-agreements --accept-source-agreements -e
+        Write-Host "Node.js installed -- restart your shell, then run:"
+        Write-Host "  cd web\frontend; npm install; npm run build"
+    }
+} else {
+    Write-Host "npm already on PATH, skipping Node.js install."
+    if (-not (Test-Path "$RepoRoot\web\frontend\dist")) {
+        Push-Location "$RepoRoot\web\frontend"
+        npm install
+        npm run build
+        Pop-Location
+    }
+}
+
 # Ollama + model pull
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
     if (Confirm-Step "Install Ollama via winget?") {

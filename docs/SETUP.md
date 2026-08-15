@@ -109,7 +109,72 @@ docker compose up -d db
 Host port **5433**, not 5432 — see the comment in `docker-compose.yml`.
 Set `DATABASE_URL` per `.env.example` (already points at 5433).
 
+## Web UI (`mal-agent web`)
+
+Not part of "Manual tool setup" above — this is a first-class part of the
+product, not an optional external tool, but it needs one thing Path A/B
+don't install by default: **Node.js** (LTS, from
+[nodejs.org](https://nodejs.org) or your package manager), to build the
+frontend once.
+
+```bash
+pip install -e ".[web]"          # fastapi, uvicorn, python-multipart
+cd web/frontend
+npm install
+npm run build                     # produces web/frontend/dist/ (gitignored, built locally)
+cd ../..
+mal-agent web                     # serves the API + the built UI on one port
+```
+
+`scripts/install.ps1`/`.sh` already do all of this automatically when
+`npm` is on `PATH` at install time (and print clear instructions if it
+isn't). `mal-agent doctor` reports the web UI's real status as its own
+`web_ui` check — `PASS` means both fastapi/uvicorn are importable *and*
+the frontend is actually built; `WARN` tells you exactly which half is
+missing.
+
+Then open **http://127.0.0.1:8765** in a browser. `--host`/`--port`
+change either. Runs persist to a local SQLite file (`malagent_web.db`,
+created next to wherever you run the command) by default — set
+`DATABASE_URL` yourself to opt into Postgres instead.
+
+### Running it for a demo or any session longer than a few commands
+
+**`mal-agent web` is a foreground, long-running process.** Run it in its
+own dedicated terminal window and leave that window open for as long as
+you want the UI reachable — closing the terminal, or the process being
+killed for any reason, takes the whole UI down immediately and silently
+(the browser just shows a connection error, with no indication of what
+happened). If you're about to demo this, start the server yourself in
+your own terminal a few minutes ahead of time and confirm it's up
+(`curl http://127.0.0.1:8765/api/health` should return `{"status":"ok"}`)
+rather than relying on a process someone else started for you — a
+background process managed by a separate tool/session is not guaranteed
+to still be alive by the time you actually need it.
+
+If you'd rather not depend on a browser at all for a demo, `mal-agent
+analyze <sample>` prints the same live per-stage progress straight to
+the terminal and needs nothing but the CLI — the more failure-resistant
+option when reliability matters more than the visual report.
+
 ## Troubleshooting (real bugs hit during this project's own setup)
+
+- **Web UI loads a blank page, or every action ("upload," "run") fails
+  immediately.** Check the backend is actually running first —
+  `curl http://127.0.0.1:8765/api/health`. A dead/never-started backend
+  is indistinguishable, from the browser's side, from "the whole thing is
+  broken": no error detail, just a failed connection. This is the single
+  most common failure mode and it's a process-lifecycle issue, not a code
+  bug — see "Running it for a demo" above.
+- **`mal-agent doctor`'s `web_ui` check says `WARN` about the frontend not
+  being built** even though you ran `npm run build` — confirm you ran it
+  inside `web/frontend/` (not the repo root) and that it completed without
+  error; check for `web/frontend/dist/index.html` directly.
+- **Browser shows the page but nothing happens on submit.** Open the
+  browser's own developer console (F12) and check for a red error there
+  first — that tells you whether the request left the browser at all
+  (network tab) versus failed once it arrived at the backend (check the
+  terminal running `mal-agent web` for a traceback).
 
 - **`GHIDRA_HOME` vs `GHIDRA_INSTALL_DIR`.** Only `GHIDRA_HOME` needs to be
   set — `ghidra_tool.py` passes it through to `pyghidra.start(install_dir=...)`
