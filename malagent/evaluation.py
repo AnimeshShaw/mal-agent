@@ -72,10 +72,21 @@ class EvaluationReport:
 
     @property
     def f1(self) -> Optional[float]:
-        p, r = self.precision, self.committed_recall
-        if p is None or r is None or (p + r) == 0:
-            return None
-        return 2 * p * r / (p + r)
+        """Standard F1 over strict recall -- an abstention on real malware is
+        a miss. (Before 2026-09-27 this used committed_recall, which let a
+        system that abstained on 75% of malware report F1=1.0.)"""
+        return _f1(self.precision, self.recall)
+
+    @property
+    def committed_f1(self) -> Optional[float]:
+        """F1 among committed calls only -- a diagnostic, never the headline."""
+        return _f1(self.precision, self.committed_recall)
+
+    @property
+    def fpr(self) -> Optional[float]:
+        """False-positive rate among committed calls on benign samples."""
+        denom = self.fp + self.tn
+        return self.fp / denom if denom else None
 
     @property
     def undetermined_rate(self) -> float:
@@ -93,6 +104,33 @@ class EvaluationReport:
     def undetermined_rate_benign(self) -> Optional[float]:
         denom = self.tn + self.fp + self.undetermined_benign
         return self.undetermined_benign / denom if denom else None
+
+
+def _f1(p: Optional[float], r: Optional[float]) -> Optional[float]:
+    if p is None or r is None or (p + r) == 0:
+        return None
+    return 2 * p * r / (p + r)
+
+
+def known_good_overlap(samples: list[LabeledSample], allowlist_path: str) -> int:
+    """How many manifest samples' SHA256 appear in the known-good allowlist
+    -- any overlap means a benign "true negative" there is a hash lookup,
+    not an analysis result."""
+    import hashlib
+    from .knowngood import load_known_good_hashes
+    try:
+        allow = load_known_good_hashes(allowlist_path)
+    except Exception:
+        return 0
+    n = 0
+    for s in samples:
+        try:
+            with open(s.path, "rb") as fh:
+                if hashlib.sha256(fh.read()).hexdigest() in allow:
+                    n += 1
+        except OSError:
+            continue
+    return n
 
 
 class _Counters:
@@ -147,9 +185,31 @@ def load_labeled_samples(manifest_path: str) -> list[LabeledSample]:
 
 
 def evaluate(samples: list[LabeledSample], *,
-            analyze_fn: Optional[Callable] = None, **analyze_kwargs) -> EvaluationReport:
+            analyze_fn: Optional[Callable] = None, with_known_good: bool = False,
+            **analyze_kwargs) -> EvaluationReport:
+    """with_known_good=False (the default) unsets KNOWN_GOOD_HASHES_PATH for
+    the duration of the run: the allowlist decides benign by exact hash, so
+    scoring a benign set that is in it measures the lookup, not the system.
+    Found 2026-09-27: all 26 benign samples of the original manifest were in
+    dataset/known_good_hashes.csv, so every earlier TN=26 was the allowlist."""
+    import os
     if analyze_fn is None:
         from .pipeline import analyze as analyze_fn
+    saved = os.environ.get("KNOWN_GOOD_HASHES_PATH")
+    if not with_known_good and saved is not None:
+        overlap = known_good_overlap(samples, saved)
+        print(f"[evaluate] known-good allowlist disabled for this run "
+              f"({overlap} manifest sample(s) are in it); pass --with-known-good "
+              f"to keep it on.", flush=True)
+        del os.environ["KNOWN_GOOD_HASHES_PATH"]
+    try:
+        return _evaluate(samples, analyze_fn, analyze_kwargs)
+    finally:
+        if saved is not None:
+            os.environ["KNOWN_GOOD_HASHES_PATH"] = saved
+
+
+def _evaluate(samples, analyze_fn, analyze_kwargs) -> EvaluationReport:
 
     results: list[SampleResult] = []
     counters = _Counters()
@@ -185,7 +245,9 @@ def format_report(report: EvaluationReport) -> str:
         f"precision:        {fmt(report.precision)}",
         f"recall:           {fmt(report.recall)}  (counts abstention on malware as a miss)",
         f"committed_recall: {fmt(report.committed_recall)}  (only among committed calls)",
-        f"f1:               {fmt(report.f1)}",
+        f"f1:               {fmt(report.f1)}  (strict recall)",
+        f"committed_f1:     {fmt(report.committed_f1)}  (diagnostic only)",
+        f"fpr:              {fmt(report.fpr)}  (among committed benign calls)",
         f"undetermined_rate:          {report.undetermined_rate:.4f}",
         f"undetermined_rate_malicious: {fmt(report.undetermined_rate_malicious)}",
         f"undetermined_rate_benign:    {fmt(report.undetermined_rate_benign)}",
