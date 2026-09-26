@@ -155,6 +155,60 @@ def _ember_score(state: AnalysisState) -> Optional[float]:
     return None
 
 
+def _ember_in_distribution(state: AnalysisState) -> bool:
+    """EMBER2024's detector is trained on PE files; for anything else
+    thrember silently falls back to byte-histogram/string features only.
+    Measured 2026-09-27: 94/117 real benign non-PE files (markdown, Python,
+    PDF, docx, zip, PowerShell, JS) scored >= 0.15 -- including this repo's
+    own docs/SETUP.md at 0.94. So its score may only *decide* for PE
+    samples; elsewhere it's shown as evidence, never as the verdict."""
+    return state.sample.file_type == "PE"
+
+
+def _ember_payload_scores(state: AnalysisState) -> list[tuple[str, float]]:
+    """EMBER scores of PE payloads extracted from a container sample
+    (locator 'ember:payload:<path>'), malformed records skipped."""
+    out = []
+    for ev in state.evidence:
+        if ev.locator.startswith("ember:payload:"):
+            try:
+                out.append((ev.locator[len("ember:payload:"):], float(ev.excerpt)))
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _decisive_ember(state: AnalysisState) -> Optional[tuple[float, Optional[str]]]:
+    """(score, payload_name) for the EMBER score allowed to decide the
+    verdict: the sample's own score for a PE; for anything else, the
+    highest score among its extracted PE payloads (a container is as
+    dangerous as the worst executable it carries); None if neither."""
+    if _ember_in_distribution(state):
+        p = _ember_score(state)
+        return (p, None) if p is not None else None
+    payloads = _ember_payload_scores(state)
+    if payloads:
+        name, p = max(payloads, key=lambda x: x[1])
+        return p, name
+    return None
+
+
+def _decisive_ember_score(state: AnalysisState) -> Optional[float]:
+    """The EMBER score only when it is allowed to decide the verdict."""
+    d = _decisive_ember(state)
+    return d[0] if d else None
+
+
+def _ember_ood_note(state: AnalysisState) -> Optional[str]:
+    p = _ember_score(state)
+    if p is None or _decisive_ember(state) is not None:
+        return None
+    return (f"EMBER2024 score {p:.4f} not used for the verdict: file type "
+            f"'{state.sample.file_type}' is out-of-distribution for its PE-trained "
+            f"detector (benign non-PE files routinely score high). The "
+            f"deterministic evidence decided instead.")
+
+
 def _named_threat_intel_override(state: AnalysisState, grounded: list[Finding]) -> bool:
     """A specific, named match -- a third-party YARA rule, or a
     high-confidence VirusTotal reputation hit (severity='high', >=5
@@ -220,6 +274,16 @@ def fusion_mode_label(state: AnalysisState) -> str:
     even configured at all)."""
     if _ember_score(state) is None:
         return "n/a (no EMBER score available -- deterministic gate decided; see docs/ARCHITECTURE.md)"
+    d = _decisive_ember(state)
+    if d is not None and d[1] is not None:
+        mode = ("cgef (opt-in) -- Confidence-Gated Evidence Fusion" if state.fusion_mode == "cgef"
+                else "simple (default) -- EMBER classifier decides")
+        return (f"{mode}, on extracted PE payload '{d[1]}' (the container itself is "
+                f"out-of-distribution for EMBER2024)")
+    if not _ember_in_distribution(state):
+        return (f"n/a (EMBER score present but not decisive -- file type "
+                f"'{state.sample.file_type}' is out-of-distribution for EMBER2024; "
+                f"deterministic gate decided)")
     if state.fusion_mode == "cgef":
         return "cgef (opt-in) -- Confidence-Gated Evidence Fusion, docs/ML_CLASSIFIER_PLAN.md S10"
     return "simple (default) -- EMBER classifier decides alone, docs/ML_CLASSIFIER_PLAN.md S11"
@@ -229,6 +293,9 @@ def build_verdict(state: AnalysisState) -> Verdict:
     grounded = [f for f in state.findings if f.grounded]
     techniques = sorted({t for f in state.findings for t in f.attack_techniques})
     unresolved = [u for sr in state.stage_results for u in sr.unresolved]
+    ood_note = _ember_ood_note(state)
+    if ood_note:
+        unresolved.append(ood_note)
 
     # Known-good hash match short-circuits everything else: a cryptographic
     # match to a trusted reference is evidence about this exact file, not a
@@ -255,7 +322,7 @@ def build_verdict(state: AnalysisState) -> Verdict:
     # opt-in). A named threat-intel override wins regardless of mode -- a
     # specific signature match is stronger evidence than any generic
     # probability. Otherwise, dispatch on state.fusion_mode.
-    ember_p = _ember_score(state)
+    ember_p = _decisive_ember_score(state)
     if ember_p is not None:
         ember_finding = next((f for f in grounded
                              if any(state_ev.locator == "ember:score" for state_ev in state.evidence
@@ -502,6 +569,10 @@ def _finding_indication(f: Finding, state: AnalysisState) -> str:
     ev_by_id = {e.evidence_id: e for e in state.evidence}
     for eid in f.evidence:
         ev = ev_by_id.get(eid)
+        if ev and ev.locator == "ember:score" and not _ember_in_distribution(state):
+            return ("EMBER classifier score, shown for context only -- this file type "
+                    "is out-of-distribution for EMBER2024's PE-trained detector, so "
+                    "the score does not decide the verdict.")
         if ev and ev.locator == "ember:score":
             return ("This is the EMBER classifier score itself -- in 'simple' fusion "
                     "mode (the default) it alone decides the verdict; see Section 2.")
@@ -511,7 +582,7 @@ def _finding_indication(f: Finding, state: AnalysisState) -> str:
                     "either fusion mode, regardless of the EMBER score.")
     cats = {cat for eid in f.evidence
            if (ev := ev_by_id.get(eid)) and (cat := _locator_category(ev.locator))}
-    ember_present = _ember_score(state) is not None
+    ember_present = _decisive_ember_score(state) is not None
     if cats:
         if ember_present and state.fusion_mode == "simple":
             return (f"Corroborating/contextual evidence only (category: "
@@ -541,7 +612,15 @@ def _finding_direction(f: Finding, state: AnalysisState) -> Literal[
         ev = ev_by_id.get(eid)
         if not ev:
             continue
+        if ev.locator.startswith("ember:payload:"):
+            try:
+                return ("supports_malicious" if float(ev.excerpt) >= _EMBER_SIMPLE_THRESHOLD
+                        else "supports_benign")
+            except (TypeError, ValueError):
+                return "neutral"
         if ev.locator == "ember:score":
+            if not _ember_in_distribution(state):
+                return "neutral"
             try:
                 score = float(ev.excerpt)
             except (TypeError, ValueError):

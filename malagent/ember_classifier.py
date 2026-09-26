@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from .contracts import AnalysisState, EvidenceRecord, Finding, StageResult
 from .tools import _artifact, _id
+from .unpacker import extract_files
 
 
 def _import_thrember():
@@ -60,17 +61,43 @@ class EmberClassifierTool:
             return StageResult(stage="triage", status="error",
                                unresolved=[f"EMBER classifier failed: {e}"])
 
+        # A non-PE container is out-of-distribution for EMBER as a whole, but
+        # the PE payloads inside it are not -- score each one separately so
+        # the verdict can rest on in-distribution evidence (reporter decides).
+        payload_scores: list[tuple[str, float]] = []
+        unresolved: list[str] = []
+        if data[:2] != b"MZ":
+            for name, inner in extract_files(data):
+                if inner[:2] != b"MZ":
+                    continue
+                try:
+                    payload_scores.append((name, float(thrember.predict_sample(model, inner))))
+                except Exception as e:
+                    unresolved.append(f"EMBER failed on extracted payload {name}: {e}")
+
         input_ref = state.sample.sha256
         art = _artifact(self.name, input_ref, f"{score:.6f}".encode())
         ev = EvidenceRecord(evidence_id=_id("ev", input_ref, "ember"),
                             artifact_id=art.artifact_id, locator="ember:score",
                             excerpt=f"{score:.4f}", trust="tool")
+        evidence = [ev]
+        for name, ps in payload_scores:
+            evidence.append(EvidenceRecord(
+                evidence_id=_id("ev", input_ref, "ember_payload", name),
+                artifact_id=art.artifact_id, locator=f"ember:payload:{name}",
+                excerpt=f"{ps:.4f}", trust="tool"))
+        claim = (f"EMBER2024 classifier: P(malicious)={score:.4f} "
+                 f"(model: {os.path.basename(model_path)}).")
+        if payload_scores:
+            claim += " Extracted PE payloads: " + ", ".join(
+                f"{n}={ps:.4f}" for n, ps in payload_scores) + "."
         finding = Finding(
-            finding_id=_id("f", input_ref, "ember"),
-            claim=f"EMBER2024 classifier: P(malicious)={score:.4f} "
-                  f"(model: {os.path.basename(model_path)}).",
+            finding_id=_id("f", input_ref, "ember"), claim=claim,
             category="capability", severity="info", confidence=0.5,
-            evidence=[ev.evidence_id], source_stage="triage")
+            evidence=[e.evidence_id for e in evidence], source_stage="triage")
+        notes = f"ember score={score:.4f}"
+        if payload_scores:
+            notes += f"; {len(payload_scores)} PE payload(s) scored"
         return StageResult(stage="triage", status="ok", findings=[finding],
-                           artifacts=[art], evidence=[ev],
-                           notes=f"ember score={score:.4f}")
+                           artifacts=[art], evidence=evidence, unresolved=unresolved,
+                           notes=notes)

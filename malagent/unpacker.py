@@ -153,6 +153,22 @@ def _walk(name: str, data: bytes, depth: int, budget: _Budget,
     extracted.append(_ExtractedFile(path=name, data=data))
 
 
+def extract_files(data: bytes) -> list[tuple[str, bytes]]:
+    """Public, best-effort flattening of a ZIP/ISO container into
+    (nested_path, bytes) pairs, with the same depth/size budget UnpackerTool
+    uses. Returns [] for non-containers or anything that fails to parse --
+    callers (e.g. EmberClassifierTool scoring PE payloads) treat "nothing
+    extracted" as "no extra evidence", never as a verdict."""
+    if not (_is_zip(data) or (_is_iso9660(data) and pycdlib is not None)):
+        return []
+    extracted: list[_ExtractedFile] = []
+    try:
+        _walk("", data, 0, _Budget(), extracted, [False])
+    except Exception:
+        return []
+    return [(ef.path.lstrip("/"), ef.data) for ef in extracted]
+
+
 def _risky_imports_in_pe(data: bytes) -> list[str]:
     if pefile is None:
         return []
