@@ -27,6 +27,25 @@ def _compile_rules(rules_path: str):
     return yara.compile(filepath=str(path))
 
 
+# Tag/meta words that mark a rule as describing a file's format, packer,
+# compiler or generic capability rather than a specific threat. Public rule
+# sets are full of these (IsPE32, UPX, "has anti-debug"); treating them as a
+# named threat-intel match let any of them force a malicious verdict.
+_INFORMATIONAL_WORDS = {"info", "informational", "capability", "capabilities", "packer",
+                        "compiler", "installer", "format", "filetype", "file_type",
+                        "generic", "hunting", "suspicious"}
+
+
+def _is_informational(match) -> bool:
+    words = {t.lower() for t in (getattr(match, "tags", None) or [])}
+    meta = getattr(match, "meta", None) or {}
+    for key in ("category", "type", "severity", "classification"):
+        val = meta.get(key)
+        if isinstance(val, str):
+            words.add(val.lower())
+    return bool(words & _INFORMATIONAL_WORDS) or str(meta.get("severity", "")).lower() in ("low", "0")
+
+
 class YaraMatchTool:
     """Triage-stage tool: compiles an operator-supplied YARA rule set
     (YARA_RULES_PATH, a file or a directory of .yar/.yara files) and
@@ -74,16 +93,22 @@ class YaraMatchTool:
         findings: list[Finding] = []
         evidence: list[EvidenceRecord] = []
         for m in matches:
+            informational = _is_informational(m)
             claim = f"Matched YARA rule {m.rule!r} from the configured rule set."
             if m.tags:
                 claim += f" Tags: {', '.join(m.tags)}."
+            if informational:
+                claim += (" Rule is tagged informational (format/packer/capability), "
+                          "so it is context, not a named threat-intel match.")
+            prefix = "yara_info" if informational else "yara_match"
             ev = EvidenceRecord(evidence_id=_id("ev", input_ref, "yara", m.rule),
-                                artifact_id=art.artifact_id, locator=f"yara_match:{m.rule}",
+                                artifact_id=art.artifact_id, locator=f"{prefix}:{m.rule}",
                                 excerpt=m.rule, trust="tool")
             evidence.append(ev)
             findings.append(Finding(
                 finding_id=_id("f", input_ref, "yara", m.rule),
-                claim=claim, category="capability", severity="medium", confidence=0.65,
+                claim=claim, category="capability",
+                severity="low" if informational else "medium", confidence=0.65,
                 evidence=[ev.evidence_id], source_stage="triage"))
 
         return StageResult(stage="triage", status="ok", findings=findings,
