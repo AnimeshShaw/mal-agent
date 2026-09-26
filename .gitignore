@@ -31,3 +31,16 @@ docs/plans/
 # MalwareBazaar API key, if you choose the file-based option over an env
 # var for scripts/fetch_malwarebazaar.py -- never committed, obviously.
 .malwarebazaar_key
+
+# Internal research/working docs -- kept locally, not published (2026-09-27
+# audit: these contained internal context and superseded numbers).
+docs/AI-Malware-Analysis-Research-and-Framework.md
+docs/ML_CLASSIFIER_PLAN.md
+docs/ABLATION_LLM.md
+docs/EFFICIENCY.md
+docs/superpowers/
+PRODUCT.md
+# Paper sources and experiment outputs -- private until submission.
+paper/
+research_out/
+bundles/
