@@ -9,6 +9,7 @@ from .die_tool import DieTool
 from .elf_tool import ElfTool
 from .ember_classifier import EmberClassifierTool
 from .floss_tool import FlossTool
+from .format_triage import FormatTool, LnkTool, OfficeMacroTool, PdfTool, ScriptTool
 from .ghidra_tool import GhidraTool
 from .ioc_reputation import IocReputationTool
 from .knowngood import KnownGoodTool, is_known_good_match
@@ -46,8 +47,9 @@ def triage_agent(state: AnalysisState) -> AnalysisState:
     # verdict that was already decided before capa even started, because
     # the orchestrator's known-good skip list only covers stages AFTER
     # triage, not triage's own remaining tools.
-    tools = (KnownGoodTool(), StaticFeaturesTool(), IocReputationTool(), UnpackerTool(),
-             PEHeaderTool(), ElfTool(), MachoTool(), CapaTool(), AuthenticodeTool(),
+    tools = (KnownGoodTool(), FormatTool(), StaticFeaturesTool(), IocReputationTool(),
+             UnpackerTool(), PEHeaderTool(), ElfTool(), MachoTool(), ScriptTool(), LnkTool(),
+             OfficeMacroTool(), PdfTool(), CapaTool(), AuthenticodeTool(),
              YaraMatchTool(), DieTool(), VirusTotalTool(), EmberClassifierTool())
     print(f"[triage] running {len(tools)} tools...", flush=True)
     kg_tool = tools[0]
