@@ -272,3 +272,62 @@ def test_format_efficiency_report_includes_stage_and_cost_info():
     assert "static" in text.lower()
     assert "cost" in text.lower()
     assert "1" in text  # n_runs somewhere in the output
+
+
+# ---- 2026-09-27 audit fixes ----
+
+def test_f1_uses_strict_recall_so_abstention_counts():
+    """A system that abstains on 3 of 4 malware and gets the 1 it commits
+    to right must not report F1=1.0 (the old behavior used committed
+    recall). Strict recall 0.25, precision 1.0 -> F1 0.4."""
+    report = EvaluationReport(results=[], tp=1, fp=0, tn=5, fn=0,
+                              undetermined_malicious=3, undetermined_benign=0)
+    assert round(report.f1, 4) == 0.4
+    assert report.committed_f1 == 1.0
+
+
+def test_fpr_over_committed_benign_calls():
+    report = EvaluationReport(results=[], tp=0, fp=1, tn=3, fn=0,
+                              undetermined_malicious=0, undetermined_benign=4)
+    assert report.fpr == 0.25
+
+
+def test_evaluate_disables_known_good_allowlist_by_default(monkeypatch, tmp_path):
+    """The allowlist decides benign by hash lookup, so leaving it on while
+    scoring a benign set whose hashes are in it measures the lookup, not
+    the analysis (the original manifest's 26/26 benign were all in it)."""
+    import os
+    monkeypatch.setenv("KNOWN_GOOD_HASHES_PATH", str(tmp_path / "kg.csv"))
+    seen = []
+
+    def fake(path, **kw):
+        seen.append(os.environ.get("KNOWN_GOOD_HASHES_PATH"))
+        return _fake_analyze_factory({"ben1": "benign"})(path, **kw)
+
+    evaluate([LabeledSample(path="ben1", label="benign")], analyze_fn=fake)
+    assert seen == [None]
+    assert os.environ.get("KNOWN_GOOD_HASHES_PATH") == str(tmp_path / "kg.csv")
+
+
+def test_evaluate_can_opt_into_known_good(monkeypatch, tmp_path):
+    import os
+    monkeypatch.setenv("KNOWN_GOOD_HASHES_PATH", "kg.csv")
+    seen = []
+
+    def fake(path, **kw):
+        seen.append(os.environ.get("KNOWN_GOOD_HASHES_PATH"))
+        return _fake_analyze_factory({"ben1": "benign"})(path, **kw)
+
+    evaluate([LabeledSample(path="ben1", label="benign")], analyze_fn=fake, with_known_good=True)
+    assert seen == ["kg.csv"]
+
+
+def test_known_good_overlap_counts_manifest_hashes_in_allowlist(tmp_path):
+    import hashlib
+    from malagent.evaluation import known_good_overlap
+    a = tmp_path / "a.bin"; a.write_bytes(b"aaa")
+    b = tmp_path / "b.bin"; b.write_bytes(b"bbb")
+    kg = tmp_path / "kg.csv"
+    kg.write_text(hashlib.sha256(b"aaa").hexdigest() + ",a.bin\n")
+    samples = [LabeledSample(path=str(a), label="benign"), LabeledSample(path=str(b), label="benign")]
+    assert known_good_overlap(samples, str(kg)) == 1

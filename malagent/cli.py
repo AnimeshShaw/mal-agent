@@ -71,6 +71,9 @@ def main(argv=None):
                         help="verdict decision method when EMBER is configured "
                              "(see docs/ML_CLASSIFIER_PLAN.md S10/S11)")
         ep.add_argument("--out", default=None, help="also write the report text to this path")
+        ep.add_argument("--with-known-good", action="store_true",
+                        help="keep KNOWN_GOOD_HASHES_PATH active (off by default: an "
+                             "allowlist containing the benign set makes TN a hash lookup)")
         eargs = ep.parse_args(argv[1:])
 
         if not Path(eargs.manifest).exists():
@@ -82,7 +85,8 @@ def main(argv=None):
         report = evaluation.evaluate(samples, enable_models=eargs.enable_models, policy=policy,
                                      local_model=eargs.local_model,
                                      escalation_provider=eargs.escalation_provider,
-                                     fusion_mode=eargs.fusion_mode)
+                                     fusion_mode=eargs.fusion_mode,
+                                     with_known_good=eargs.with_known_good)
         text = evaluation.format_report(report)
         print(text)
         if eargs.out:
