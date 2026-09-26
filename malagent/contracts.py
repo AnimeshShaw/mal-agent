@@ -44,7 +44,10 @@ class EvidenceRecord(BaseModel):
     artifact_id: str
     locator: str                    # "function@0x401000", "rule:CreateRemoteThread"
     excerpt: Optional[str] = None   # short, sanitized
-    trust: Literal["tool", "model"] = "tool"
+    # "sample": the excerpt is text copied verbatim out of the sample itself
+    # (script body, macro source, LNK command line) -- attacker-controlled,
+    # so it may be shown to a model but never counted as tool-derived support.
+    trust: Literal["tool", "model", "sample"] = "tool"
 
 
 class Finding(BaseModel):

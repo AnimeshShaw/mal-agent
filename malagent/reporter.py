@@ -82,6 +82,9 @@ def _locator_category(locator: str) -> Optional[str]:
         return "yara_match"
     if locator.startswith("unpacker:"):
         return "unpacked_payload"
+    if ":indicator:" in locator:
+        # format_triage.py: "<tool>:indicator:<category>:<name>"
+        return locator.split(":", 3)[2]
     return None
 
 
@@ -489,6 +492,19 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "known_good": "Checks the sample's SHA256 against a trusted-hash allowlist "
                   "(e.g. an NSRL import). A match means this exact file is already "
                   "known-trusted, and short-circuits the rest of the pipeline.",
+    "format": "Identifies the file format from its content (never the extension): "
+              "PE/ELF/Mach-O, PDF, RTF, OLE/OOXML Office, LNK, OneNote, ISO, archives, "
+              "or a script type (JS/VBS/PS1/BAT/HTA).",
+    "script": "For text scripts: flags download, execution, obfuscation, defense-"
+              "tampering and persistence patterns, and keeps a verbatim excerpt "
+              "(attacker-controlled text, shown as data only).",
+    "lnk": "For Windows shortcuts: extracts the target and command line (the whole "
+           "attack in an LNK lure) and flags script hosts / LOLBins / padded arguments.",
+    "office": "For Office/RTF documents: olevba macro extraction with auto-exec and "
+              "suspicious-keyword analysis, remote-template injection, RTF embedded "
+              "objects and Equation Editor references.",
+    "pdf": "For PDFs: pdfid-style counts of active-content keywords (/JavaScript, "
+           "/OpenAction, /Launch, /EmbeddedFile, ...) and embedded URIs.",
     "static_features": "Computes whole-file Shannon entropy, extracts ASCII + "
                        "wide/UTF-16LE strings, and regex-extracts IOCs (IPs, URLs, "
                        "domains, emails, mutexes) directly from the raw bytes.",
