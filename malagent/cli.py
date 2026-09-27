@@ -9,7 +9,7 @@ from .pipeline import analyze
 
 _RESEARCH_CMDS = {"evaluate", "make-manifest", "suggest-verdict",
                   "ablate-critic", "family-attribution", "ablate-llm",
-                  "build-bundles", "judge-run", "judge-report"}
+                  "build-bundles", "judge-run", "judge-report", "judge-claims"}
 
 
 def main(argv=None):
@@ -36,7 +36,7 @@ def main(argv=None):
     elif argv and argv[0] == "analyze":
         argv = argv[1:]
 
-    if argv and argv[0] in ("build-bundles", "judge-run", "judge-report"):
+    if argv and argv[0] in ("build-bundles", "judge-run", "judge-report", "judge-claims"):
         from .judge.cli import main as judge_main
         return judge_main(argv)
 

@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-JUDGE_CMDS = {"build-bundles", "judge-run", "judge-report"}
+JUDGE_CMDS = {"build-bundles", "judge-run", "judge-report", "judge-claims"}
 
 
 def _model_slug(spec: str) -> str:
@@ -57,6 +57,34 @@ def main(argv: list[str]) -> int:
         run_jobs(jobs, prov, out, a.exp)
         return 0
 
+    if cmd == "judge-claims":
+        from .bundle import load_bundles
+        from .cache import CachedProvider
+        from .claims import annotation_rows, export_annotation_csv, run_claims
+        from .experiments import load_results, select
+        from .providers import make_provider
+        p = argparse.ArgumentParser(prog="mal-agent research judge-claims")
+        p.add_argument("--bundles", default="bundles/v2")
+        p.add_argument("--narrator", required=True, help="model writing the narratives")
+        p.add_argument("--judge", required=True, help="model verifying each claim")
+        p.add_argument("--split", default="test")
+        p.add_argument("--limit", type=int, default=60)
+        p.add_argument("--out", default="research_out")
+        p.add_argument("--annotate", type=int, default=300,
+                       help="also export this many random claims for human labelling")
+        a = p.parse_args(rest)
+        bundles = load_bundles(a.bundles)
+        sel = select(bundles, split=None if a.split == "all" else a.split, limit=a.limit)
+        cache = Path(a.out) / "llm_cache"
+        narrator = CachedProvider(make_provider(a.narrator), cache)
+        judge = CachedProvider(make_provider(a.judge), cache)
+        out = Path(a.out) / "claims" / f"{_model_slug(a.narrator)}__{_model_slug(a.judge)}.jsonl"
+        run_claims(sel, narrator, judge, out)
+        rows = annotation_rows(load_results(out), {b["sha256"]: b for b in bundles}, k=a.annotate)
+        ann = export_annotation_csv(rows, out.with_suffix(".annotate.csv"))
+        print(f"[judge-claims] wrote {out} and {ann}")
+        return 0
+
     if cmd == "judge-report":
         from .analysis import build_report, write_report
         from .bundle import load_bundles
@@ -69,9 +97,13 @@ def main(argv: list[str]) -> int:
         a = p.parse_args(rest)
         bundles = load_bundles(a.bundles)
         by_model: dict[str, list] = {}
-        for f in sorted(Path(a.results).glob("*/*.jsonl")):
-            by_model.setdefault(f.stem, []).extend(load_results(f))
+        for exp in ("main", "adversarial", "reliability"):
+            for f in sorted((Path(a.results) / exp).glob("*.jsonl")):
+                by_model.setdefault(f.stem, []).extend(load_results(f))
         rep = build_report(bundles, by_model, split=None if a.split == "all" else a.split)
+        from .analysis import claims_summary
+        rep["claims"] = {f.stem: claims_summary(load_results(f))
+                         for f in sorted((Path(a.results) / "claims").glob("*.jsonl"))}
         path = write_report(rep, a.out)
         print(f"[judge-report] wrote {path}")
         return 0
