@@ -32,12 +32,42 @@ def _maybe_router(state: AnalysisState, audit, local_name: str, local_model: str
     return ModelRouter(state, local=local, escalation=esc, audit=audit)
 
 
+def adjudicate_state(state: AnalysisState, provider, audit=None) -> AnalysisState:
+    """fusion_mode="judge": freeze the evidence into a bundle, route it, and
+    ask the judge only about hard cases. Stores the outcome on
+    state.adjudication; reporter.build_verdict() reads it."""
+    from .judge.bundle import build_bundle
+    from .judge.judge import adjudicate
+    from .judge.routing import route
+    b = build_bundle(state)
+    r = route(b)
+    adj = {"routed": r.routed, "reasons": r.reasons, "result": None}
+    if r.routed and provider is not None:
+        adj["result"] = adjudicate(b, provider, mode="provenance").to_dict()
+        if audit:
+            res = adj["result"]
+            audit.log("adjudication", model=f"{res['provider']}:{res['model']}",
+                      verdict=res["verdict"], valid=res["valid"], gated=res["gated"])
+    state.adjudication = adj
+    return state
+
+
+def _judge_provider(spec: Optional[str], policy: EgressPolicy):
+    if not spec:
+        return None
+    from .judge.providers import make_provider, parse_spec
+    if parse_spec(spec)[0] != "ollama" and not policy.allow_cloud:
+        return None  # derived evidence only, but still egress: honour the policy
+    return make_provider(spec)
+
+
 def analyze(path: str, *, provenance: Optional[Provenance] = None,
             policy: Optional[EgressPolicy] = None, enable_models: bool = False,
             local_provider: str = "ollama", local_model: str = "qwen2.5-coder:7b",
             escalation_provider: Optional[str] = "anthropic",
             escalation_model: Optional[str] = "claude-sonnet-4-6",
             fusion_mode: str = "simple",
+            judge_model: Optional[str] = None,
             progress_cb: Optional[Callable[[str], None]] = None):
     repo = get_repository()
     run_id = new_run_id()
@@ -54,6 +84,8 @@ def analyze(path: str, *, provenance: Optional[Provenance] = None,
                            escalation_provider, escalation_model, enable_models)
     state = run_pipeline(state, router=router, audit=audit, progress_cb=progress_cb)
 
+    if fusion_mode == "judge":
+        adjudicate_state(state, _judge_provider(judge_model, state.policy), audit=audit)
     verdict = build_verdict(state)
     audit.log("verdict", verdict=verdict.verdict, confidence=verdict.confidence)
     repo.save_run(state, verdict)

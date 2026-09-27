@@ -275,6 +275,14 @@ def fusion_mode_label(state: AnalysisState) -> str:
     run's verdict -- the single most important transparency line in the
     report, since the answer differs by run (and by whether EMBER was
     even configured at all)."""
+    if state.fusion_mode == "judge":
+        adj = state.adjudication or {}
+        if adj.get("routed"):
+            res = adj.get("result") or {}
+            who = f"{res.get('provider', '')}:{res.get('model', '')}" if res else "no judge configured"
+            return (f"judge (opt-in) -- hard case ({', '.join(adj.get('reasons') or [])}) "
+                    f"adjudicated by {who}")
+        return "judge (opt-in) -- not a hard case; EMBER classifier decides as in 'simple'"
     if _ember_score(state) is None:
         return "n/a (no EMBER score available -- deterministic gate decided; see docs/ARCHITECTURE.md)"
     d = _decisive_ember(state)
@@ -290,6 +298,29 @@ def fusion_mode_label(state: AnalysisState) -> str:
     if state.fusion_mode == "cgef":
         return "cgef (opt-in) -- Confidence-Gated Evidence Fusion, docs/ML_CLASSIFIER_PLAN.md S10"
     return "simple (default) -- EMBER classifier decides alone, docs/ML_CLASSIFIER_PLAN.md S11"
+
+
+def adjudication_lines(state: AnalysisState) -> list[str]:
+    """Plain-text account of an opt-in LLM adjudication (fusion_mode='judge')."""
+    adj = state.adjudication
+    if state.fusion_mode != "judge" or not adj:
+        return []
+    if not adj.get("routed"):
+        return ["Adjudication:      not a hard case -- no LLM consulted"]
+    res = adj.get("result")
+    L = [f"Adjudication:      hard case ({', '.join(adj.get('reasons') or [])})"]
+    if res is None:
+        return L + ["                   no judge model configured / permitted -- not adjudicated"]
+    L.append(f"                   judge {res.get('provider')}:{res.get('model')} said "
+             f"{res.get('raw_verdict')!r} (confidence {res.get('confidence')}); final "
+             f"{res.get('verdict')!r}; valid={res.get('valid')} gated={res.get('gated')}")
+    if res.get("cited"):
+        L.append(f"                   cited evidence: {', '.join(res['cited'][:12])}")
+    if res.get("rationale"):
+        L.append(f"                   rationale: {res['rationale'][:600]}")
+    if res.get("errors"):
+        L.append(f"                   errors: {'; '.join(res['errors'])}")
+    return L
 
 
 def build_verdict(state: AnalysisState) -> Verdict:
@@ -313,6 +344,27 @@ def build_verdict(state: AnalysisState) -> Verdict:
             yara_rules=generate_yara_rules(state),
             key_findings=[known_good.finding_id],
             unresolved=unresolved, evidence_complete=True)
+
+    if state.fusion_mode == "judge" and state.adjudication and state.adjudication.get("routed"):
+        res = state.adjudication.get("result")
+        reasons = ", ".join(state.adjudication.get("reasons") or [])
+        if res is None:
+            unresolved.append(f"Hard case ({reasons}) routed for adjudication, but no judge model "
+                              f"is configured (or egress policy blocked it); falling back.")
+        else:
+            if res.get("valid") and res.get("verdict") in ("malicious", "benign"):
+                verdict, conf = res["verdict"], round(min(0.9, float(res.get("confidence") or 0.5)), 2)
+            else:
+                verdict, conf = "undetermined", 0.3
+                why = "; ".join(res.get("errors") or []) or (
+                    "support gate: rested only on sample-derived text" if res.get("gated") else "abstained")
+                unresolved.append(f"LLM adjudication of this hard case ({reasons}) did not commit: {why}.")
+            return Verdict(
+                sample_sha256=state.sample.sha256, verdict=verdict, confidence=conf,
+                attack_techniques=techniques, iocs=state.iocs,
+                yara_rules=generate_yara_rules(state),
+                key_findings=[f.finding_id for f in grounded][:25],
+                unresolved=unresolved, evidence_complete=True)
 
     score = sum(_SEV_W[f.severity] * f.confidence for f in grounded)
     categories = _high_signal_categories(state, grounded)
@@ -823,6 +875,7 @@ def render_txt(state: AnalysisState, v: Verdict, audit, narrative: tuple[str, st
     L.append(f"Verdict:            {v.verdict.upper()}")
     L.append(f"Confidence:         {v.confidence}")
     L.append(f"Fusion mode:        {fusion_mode_label(state)}")
+    L.extend(adjudication_lines(state))
     L.append(f"Evidence complete:  {v.evidence_complete}")
     L.append(f"ATT&CK techniques:  {', '.join(v.attack_techniques) if v.attack_techniques else '(none)'}")
     L.append(f"Family:             {v.family or '(undetermined)'}")
@@ -1037,6 +1090,8 @@ def render_html(state: AnalysisState, v: Verdict, audit,
     parts.append(f'<div class="confidence">Confidence: {_e(v.confidence)} &nbsp;|&nbsp; '
                  f'Evidence complete: {_e(v.evidence_complete)} &nbsp;|&nbsp; '
                  f'Fusion mode: {_e(fusion_mode_label(state))}</div>')
+    for line in adjudication_lines(state):
+        parts.append(f'<div style="font-size:0.85rem;color:#566573">{_e(line.strip())}</div>')
     parts.append('</div>')
 
     parts.append('<div class="meta">')
@@ -1169,6 +1224,7 @@ def render_markdown(state: AnalysisState, v: Verdict) -> str:
     L.append(f"**Verdict:** {v.verdict.upper()}  |  **Confidence:** {v.confidence}  "
              f"|  **Evidence complete:** {v.evidence_complete}")
     L.append(f"**Fusion mode:** {fusion_mode_label(state)}")
+    L.extend(f"- {line.strip()}" for line in adjudication_lines(state))
     prov = state.sample.provenance
     L.append(f"**Sample:** {state.sample.file_type}, {state.sample.size} bytes  "
              f"|  **Source:** {prov.source}"

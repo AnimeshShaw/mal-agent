@@ -104,3 +104,16 @@ def test_claims_summary_rates():
     s = claims_summary([rec])
     assert s["uncited_rate"] == 0.5 and s["judge_unsupported_rate"] == 0.5
     assert s["attack_not_observed_rate"] == 0.5
+
+
+def test_annotation_export_neutralises_spreadsheet_formulas(tmp_path):
+    """Claims and evidence quote attacker-controlled sample text; a cell
+    starting with = + - @ (or tab/CR) would execute as a formula in Excel."""
+    rows = [{"claim_id": "c1", "sha256": "e" * 64, "claim": "=HYPERLINK(\"http://x\",\"a\")",
+             "evidence": "+cmd|' /c calc'!A0", "judge_label": "SUPPORTED",
+             "deterministic_flags": "@SUM(1)"}]
+    p = tmp_path / "ann.csv"
+    export_annotation_csv(rows, p)
+    row = next(csv.DictReader(open(p, encoding="utf-8")))
+    for k in ("claim", "evidence", "deterministic_flags"):
+        assert row[k][0] not in "=+-@\t\r", k

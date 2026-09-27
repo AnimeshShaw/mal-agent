@@ -175,12 +175,22 @@ def export_annotation_csv(rows: list[dict], path) -> Path:
         w = csv.DictWriter(fh, fieldnames=_ANN_FIELDS)
         w.writeheader()
         for r in rows:
-            w.writerow({k: r.get(k, "") for k in _ANN_FIELDS})
+            w.writerow({k: _csv_safe(r.get(k, "")) for k in _ANN_FIELDS})
     return p
 
 
+def _csv_safe(value) -> str:
+    """Claims and evidence quote attacker-controlled sample text: neutralise
+    spreadsheet formula injection (a leading = + - @ tab or CR is executed
+    by Excel/LibreOffice) by prefixing a single quote."""
+    s = "" if value is None else str(value)
+    return "'" + s if s[:1] in ("=", "+", "-", "@", "	", "") else s
+
+
 def import_annotations(path) -> dict:
-    rows = [r for r in csv.DictReader(open(path, encoding="utf-8"))
+    rows = [{k: (v[1:] if isinstance(v, str) and v.startswith("'") else v) for k, v in r.items()}
+            for r in csv.DictReader(open(path, encoding="utf-8"))]
+    rows = [r for r in rows
             if (r.get("human_label") or "").strip().upper() in CLAIM_LABELS
             and (r.get("judge_label") or "").strip().upper() in CLAIM_LABELS]
     h = [r["human_label"].strip().upper() for r in rows]

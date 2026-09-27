@@ -296,12 +296,15 @@ def main(argv=None):
                    help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
     p.add_argument("--escalation-provider", default="anthropic",
                    choices=["openai", "anthropic", "gemini", "xai"])
-    p.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef"],
-                   help="verdict decision method when EMBER is configured: 'simple' "
-                        "(default) lets the EMBER classifier alone decide malicious/"
-                        "benign; 'cgef' opts into the deterministic corroboration "
-                        "gate voting in the gray zone (see docs/ML_CLASSIFIER_PLAN.md "
-                        "S10/S11)")
+    p.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef", "judge"],
+                   help="verdict decision method: 'simple' (default) lets the EMBER "
+                        "classifier alone decide PE files; 'cgef' lets the deterministic "
+                        "corroboration gate vote in EMBER's gray zone; 'judge' (opt-in) sends "
+                        "only routed hard cases (non-PE, gray zone, EMBER-vs-evidence "
+                        "conflict) to an LLM adjudicator (see docs/RESEARCH.md)")
+    p.add_argument("--judge-model", default=None,
+                   help="adjudicator for --fusion-mode judge, '<provider>:<model>', e.g. "
+                        "ollama:qwen3:8b or anthropic:claude-opus-5-5 (cloud needs egress)")
     p.add_argument("--out", default="./mal-agent-reports",
                    help="dir to write report.md + verdict.json + the mandatory report.txt "
                         "(default: ./mal-agent-reports; always written, files are namespaced "
@@ -319,7 +322,7 @@ def main(argv=None):
     state, verdict, report_md, report_txt, report_html, audit = analyze(
         args.path, provenance=prov, policy=policy, enable_models=args.enable_models,
         local_model=args.local_model, escalation_provider=args.escalation_provider,
-        fusion_mode=args.fusion_mode)
+        fusion_mode=args.fusion_mode, judge_model=args.judge_model)
 
     print(report_md)
     print(f"\n[audit] chain intact: {audit.verify()}  records: {len(audit.records)}")
