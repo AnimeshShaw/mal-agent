@@ -47,7 +47,8 @@ def main() -> int:
     if (DS / "malicious_v2_meta.csv").exists():
         for r in csv.DictReader(open(DS / "malicious_v2_meta.csv", encoding="utf-8")):
             mal_meta[r["sha256"].lower()] = r
-    for f in sorted((DS / "malicious_v2").rglob("*.bin")):
+    mal_files = sorted((DS / "malicious_v2").rglob("*.bin")) + sorted((DS / "malicious_v2_tags").rglob("*.bin"))
+    for f in mal_files:
         m = mal_meta.get(f.stem.lower(), {})
         fs = (m.get("first_seen") or "")[:10]
         rows.append(dict(path=_rel(f), label="malicious", file_type=f.parent.name,
