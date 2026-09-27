@@ -92,3 +92,15 @@ def test_annotation_roundtrip(tmp_path):
         w.writerows(data)
     res = import_annotations(p)
     assert res["n"] == 1 and res["agreement"] == 1.0
+
+
+def test_claims_summary_rates():
+    from malagent.judge.analysis import claims_summary
+    rec = {"claims": [
+        {"deterministic": {"uncited": True, "citations_valid": True, "entities_grounded": True,
+                           "attack_not_observed": []}, "judge": {"label": "NOT_SUPPORTED"}},
+        {"deterministic": {"uncited": False, "citations_valid": True, "entities_grounded": False,
+                           "attack_not_observed": ["T1486"]}, "judge": {"label": "SUPPORTED"}}]}
+    s = claims_summary([rec])
+    assert s["uncited_rate"] == 0.5 and s["judge_unsupported_rate"] == 0.5
+    assert s["attack_not_observed_rate"] == 0.5

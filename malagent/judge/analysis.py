@@ -222,6 +222,29 @@ def cost_table(results: list[dict]) -> dict:
             "latency_p95_ms": lat[int(len(lat) * 0.95)] if lat else None}
 
 
+# ---------------------------------------------------------------- claims
+def claims_summary(records: list[dict]) -> dict:
+    claims = [c for r in records for c in r.get("claims", [])]
+    if not claims:
+        return {"narratives": len(records), "claims": 0}
+    judged = [c for c in claims if (c.get("judge") or {}).get("label") in
+              ("SUPPORTED", "NOT_SUPPORTED", "CONTRADICTED")]
+    det = [c["deterministic"] for c in claims]
+    lab = Counter(c["judge"]["label"] for c in judged)
+    return {
+        "narratives": len(records), "claims": len(claims),
+        "claims_per_narrative": len(claims) / max(1, len(records)),
+        "uncited_rate": sum(d["uncited"] for d in det) / len(det),
+        "invalid_citation_rate": sum(not d["citations_valid"] for d in det) / len(det),
+        "ungrounded_entity_rate": sum(not d["entities_grounded"] for d in det) / len(det),
+        "attack_not_observed_rate": sum(bool(d["attack_not_observed"]) for d in det) / len(det),
+        "judge_labels": dict(lab),
+        "judge_unsupported_rate": (sum(v for k, v in lab.items() if k != "SUPPORTED") / len(judged))
+        if judged else None,
+        "judge_unparseable": len(claims) - len(judged),
+    }
+
+
 # ---------------------------------------------------------------- report
 def _confusion_md(title, table) -> list[str]:
     L = [f"### {title}", "",
@@ -296,6 +319,16 @@ def report_markdown(rep: dict) -> str:
               f"- calibration: ECE {_fmt(m['calibration']['ece'])}, AURC {_fmt(m['calibration']['aurc'])} "
               f"over {m['calibration']['n_committed']} committed verdicts",
               f"- cost: {json.dumps({k: (round(v, 3) if isinstance(v, float) else v) for k, v in m['cost'].items()})}"]
+    if rep.get("claims"):
+        L += ["", "## Claim-level verification of narratives", "",
+              "| Narrator__Judge | narratives | claims | uncited | invalid cite | ungrounded entity | "
+              "ATT&CK not observed | judge unsupported |", "|---|---|---|---|---|---|---|---|"]
+        for k, c in rep["claims"].items():
+            if not c.get("claims"):
+                continue
+            L.append(f"| {k} | {c['narratives']} | {c['claims']} | {_fmt(c['uncited_rate'], True)} | "
+                     f"{_fmt(c['invalid_citation_rate'], True)} | {_fmt(c['ungrounded_entity_rate'], True)} | "
+                     f"{_fmt(c['attack_not_observed_rate'], True)} | {_fmt(c['judge_unsupported_rate'], True)} |")
     return "\n".join(L) + "\n"
 
 
