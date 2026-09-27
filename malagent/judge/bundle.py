@@ -114,7 +114,7 @@ def save_bundle(bundle: dict, out_dir) -> Path:
 
 def load_bundles(bundle_dir) -> list[dict]:
     return [json.loads(p.read_text(encoding="utf-8"))
-            for p in sorted(Path(bundle_dir).glob("*.json"))]
+            for p in sorted(Path(bundle_dir).glob("*.json")) if not p.name.startswith("_")]
 
 
 # ---------------------------------------------------------------- collection
