@@ -8,7 +8,8 @@ from .pipeline import analyze
 
 
 _RESEARCH_CMDS = {"evaluate", "make-manifest", "suggest-verdict",
-                  "ablate-critic", "family-attribution", "ablate-llm"}
+                  "ablate-critic", "family-attribution", "ablate-llm",
+                  "build-bundles", "judge-run", "judge-report"}
 
 
 def main(argv=None):
@@ -34,6 +35,10 @@ def main(argv=None):
         argv = argv[1:]
     elif argv and argv[0] == "analyze":
         argv = argv[1:]
+
+    if argv and argv[0] in ("build-bundles", "judge-run", "judge-report"):
+        from .judge.cli import main as judge_main
+        return judge_main(argv)
 
     if argv and argv[0] == "doctor":
         from .doctor import exit_code, format_report, run_checks
