@@ -469,8 +469,10 @@ class CapaTool:
                                           f"file format for capa."],
                                notes="skipped: unsupported file format")
         try:
-            out = subprocess.run(_capa_command(state.sample.path),
-                                 capture_output=True, timeout=300)
+            # MAL_AGENT_CAPA_TIMEOUT: batch bundle-building bounds capa per sample
+            # (a few samples otherwise take 5+ minutes each); default unchanged.
+            out = subprocess.run(_capa_command(state.sample.path), capture_output=True,
+                                 timeout=int(os.getenv("MAL_AGENT_CAPA_TIMEOUT", "300")))
             doc = _json.loads(out.stdout.decode("utf-8", "ignore"))
         except Exception as e:
             return StageResult(stage="triage", status="error",
