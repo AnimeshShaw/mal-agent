@@ -184,7 +184,7 @@ def _csv_safe(value) -> str:
     spreadsheet formula injection (a leading = + - @ tab or CR is executed
     by Excel/LibreOffice) by prefixing a single quote."""
     s = "" if value is None else str(value)
-    return "'" + s if s[:1] in ("=", "+", "-", "@", "	", "") else s
+    return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
 
 
 def import_annotations(path) -> dict:
