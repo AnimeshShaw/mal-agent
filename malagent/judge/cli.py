@@ -23,10 +23,22 @@ def main(argv: list[str]) -> int:
         p.add_argument("--limit", type=int, default=None)
         p.add_argument("--capa-timeout", type=int, default=180,
                        help="per-sample capa timeout in seconds (default 180)")
+        p.add_argument("--max-pool-restarts", type=int, default=3,
+                       help="how many times to restart the worker pool after a crash "
+                            "(e.g. out-of-memory) before giving up on remaining samples "
+                            "(default 3; each restart resumes only what's left)")
         a = p.parse_args(rest)
         os.environ["MAL_AGENT_CAPA_TIMEOUT"] = str(a.capa_timeout)
         os.environ.pop("KNOWN_GOOD_HASHES_PATH", None)  # never let the allowlist decide
-        print(build_bundles(a.manifest, a.out, workers=a.workers, limit=a.limit))
+        result = build_bundles(a.manifest, a.out, workers=a.workers, limit=a.limit,
+                               max_pool_restarts=a.max_pool_restarts)
+        print(result)
+        if result["not_built"]:
+            print(f"[build-bundles] {result['not_built']} sample(s) not built -- re-run this "
+                  f"same command to resume (a non-zero exit here is deliberate: a caller "
+                  f"chaining judge-run after this must not silently score a partial dataset).",
+                  file=sys.stderr)
+            return 1
         return 0
 
     if cmd == "judge-run":
