@@ -284,7 +284,21 @@ def main(argv=None):
             print(f"[out] wrote {largs.out}")
         return 0
 
-    p = argparse.ArgumentParser(prog="mal-agent", description="Evidence-grounded static malware analysis")
+    p = argparse.ArgumentParser(
+        prog="mal-agent", description="Evidence-grounded static malware analysis",
+        epilog="Other commands:\n"
+               "  mal-agent doctor                    check this machine's tool/model setup\n"
+               "  mal-agent web                        launch the local web UI\n"
+               "  mal-agent evaluate <manifest.csv>    score verdicts against labeled samples\n"
+               "  mal-agent make-manifest <dir>        build a manifest.csv from <dir>/{benign,malicious}\n"
+               "  mal-agent research <subcommand>      dataset/experiment tooling for the paper\n"
+               "                                        (build-bundles, judge-run, judge-report,\n"
+               "                                        judge-claims, ablate-critic, ablate-llm,\n"
+               "                                        family-attribution, suggest-verdict)\n"
+               "Run any of the above with --help for its own options. See docs/RESEARCH.md for\n"
+               "the research subcommands and docs/SETUP.md for install/config.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("path", help="path to the sample")
     p.add_argument("--source", default="manual", choices=["soc", "cdc", "manual", "dataset"])
     p.add_argument("--ticket", default=None)
