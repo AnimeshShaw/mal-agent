@@ -128,3 +128,31 @@ def test_select_balances_labels():
     bs = [_bundle(i, "malicious") for i in range(10)] + [_bundle(100 + i, "benign") for i in range(3)]
     s = select(bs, split="test", limit=6)
     assert len(s) == 6 and sum(b["label"] == "benign" for b in s) == 3
+
+
+def test_transient_provider_errors_are_retried_and_never_recorded(tmp_path, monkeypatch):
+    """A flaky backend (Ollama 500, rate limit) must not be scored as the
+    judge abstaining: the job is retried, and if it still fails it is left
+    unrecorded so a re-run picks it up."""
+    import malagent.judge.experiments as ex
+    monkeypatch.setattr(ex.time, "sleep", lambda s: None)
+    bs = [_bundle(3, "malicious", fmt="lnk", decisive=None)]
+
+    class _Flaky(_Oracle):
+        def __init__(self, labels, fail_times):
+            super().__init__(labels)
+            self.fail_times = fail_times
+
+        def generate(self, *a, **k):
+            if self.fail_times > 0:
+                self.fail_times -= 1
+                raise RuntimeError("500 Server Error")
+            return super().generate(*a, **k)
+
+    out = tmp_path / "f.jsonl"
+    assert run_jobs(main_jobs(bs), _Flaky({"lnk": "malicious"}, 2), out, "main", progress=False) == 1
+    assert load_results(out)[0]["result"]["verdict"] == "malicious"
+
+    out2 = tmp_path / "g.jsonl"
+    assert run_jobs(main_jobs(bs), _Flaky({"lnk": "malicious"}, 99), out2, "main", progress=False) == 0
+    assert load_results(out2) == []

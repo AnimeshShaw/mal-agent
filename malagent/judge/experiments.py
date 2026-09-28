@@ -17,6 +17,7 @@ Experiments
 from __future__ import annotations
 import json
 import random
+import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
@@ -69,7 +70,7 @@ def _record(b: dict, exp: str, variant: str, res, extra: dict) -> dict:
 
 
 def run_jobs(jobs: Iterable[tuple[dict, str, dict, Optional[Callable]]], provider, out_path,
-             exp: str, progress: bool = True) -> int:
+             exp: str, progress: bool = True, retries: int = 3) -> int:
     """jobs: (bundle, variant, adjudicate_kwargs, transform-or-None)."""
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +80,17 @@ def run_jobs(jobs: Iterable[tuple[dict, str, dict, Optional[Callable]]], provide
     with open(out, "a", encoding="utf-8") as fh:
         for b, variant, kw, transform in jobs:
             src = transform(b) if transform else b
-            res = adjudicate(src, provider, **kw)
+            res = None
+            for attempt in range(retries + 1):
+                res = adjudicate(src, provider, **kw)
+                if not any(e.startswith("provider error") for e in res.errors):
+                    break
+                time.sleep(min(60, 5 * 2 ** attempt))
+            if any(e.startswith("provider error") for e in res.errors):
+                # A backend failure is not the judge abstaining: leave it
+                # unrecorded so the next (resumed) run retries it.
+                print(f"[{exp}] skipped {b['sha256'][:12]} {variant}: {res.errors[0][:120]}", flush=True)
+                continue
             extra = {k: (sorted(v) if isinstance(v, (set, frozenset)) else v) for k, v in kw.items()}
             fh.write(json.dumps(_record(b, exp, variant, res, extra)) + "\n")
             fh.flush()

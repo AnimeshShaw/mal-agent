@@ -108,11 +108,18 @@ def judge_claim(claim: dict, bundle: dict, rendered: Rendered, provider, *, seed
                    for a, e in zip([a for a in claim["cited"] if a in rendered.id_map], cited))
     prompt = (f"SENTENCE:\n{claim['text']}\n\nCITED EVIDENCE:\n{ev or '(nothing cited)'}\n\n"
               f"Reply with the JSON object only.")
-    try:
-        g = provider.generate(CLAIM_SYSTEM, prompt, temperature=0.0, seed=seed, json_mode=True,
-                              max_tokens=200)
-    except Exception as e:
-        return {"label": "ERROR", "reason": f"{type(e).__name__}: {str(e)[:120]}"}
+    import time
+    g = None
+    for attempt in range(4):
+        try:
+            g = provider.generate(CLAIM_SYSTEM, prompt, temperature=0.0, seed=seed, json_mode=True,
+                                  max_tokens=200)
+            break
+        except Exception as e:
+            err = f"{type(e).__name__}: {str(e)[:120]}"
+            time.sleep(min(60, 5 * 2 ** attempt))
+    if g is None:
+        return {"label": "ERROR", "reason": err}
     obj = parse_judge_output(g.text) or {}
     label = str(obj.get("label", "")).strip().upper()
     if label not in CLAIM_LABELS:
@@ -231,8 +238,11 @@ def run_claims(bundles: list[dict], narrator, judge, out_path, progress: bool = 
                 err = f"{type(e).__name__}: {str(e)[:200]}"
             else:
                 err = None
-            ver = verify_narrative(narrative, b, judge) if narrative else {"n_claims": 0, "claims": [],
-                                                                           "summary": {}}
+            if err:
+                # backend failure: leave unrecorded so a resumed run retries it
+                print(f"[claims] skipped {b['sha256'][:12]}: {err[:120]}", flush=True)
+                continue
+            ver = verify_narrative(narrative, b, judge)
             fh.write(json.dumps({"sha256": b["sha256"], "label": b["label"], "format": b.get("format"),
                                  "split": (b.get("meta") or {}).get("split"),
                                  "narrator": f"{narrator.name}:{narrator.model}",
