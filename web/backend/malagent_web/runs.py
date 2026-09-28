@@ -128,6 +128,12 @@ def _execute(run: Run, path: str, kwargs: dict, detail_fn: Optional[Callable],
         run.report_md, run.report_txt, run.report_html = report_md, report_txt, report_html
         run.detail = detail_fn(state, verdict) if detail_fn else None
         run.status = "complete"
+    except OSError as e:
+        run.error = (f"{type(e).__name__}: {e}. The sample could not be read back from disk -- "
+                     f"on Windows this is usually antivirus quarantining it on arrival. Add an "
+                     f"exclusion for the mal-agent quarantine folder (or set MAL_AGENT_UPLOAD_DIR "
+                     f"to an excluded folder) and try again.")
+        run.status = "error"
     except Exception as e:
         run.error = f"{type(e).__name__}: {e}"
         run.status = "error"
