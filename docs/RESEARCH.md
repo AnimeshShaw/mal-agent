@@ -116,6 +116,30 @@ git repo; `dataset/` is gitignored.
 
 ## 4. Running the experiments
 
+**Quickest path in:** `python scripts/reproduce.py check` reports exactly what's
+installed/configured on your machine (deterministic tools, Ollama, the EMBER
+model file, a dataset manifest) and what's missing for each. `python
+scripts/reproduce.py smoke` then runs the real pipeline end to end in ~10
+seconds against a handful of safe, synthesized multi-format files (no
+malware, no network, no LLM required) — this proves the tool itself works on
+your machine, distinct from reproducing the paper's numbers. `python
+scripts/reproduce.py paper` is a cross-platform wrapper around the exact
+commands below, with the same idempotent/resumable/stop-on-critical-failure
+behavior as `scripts/run_research_jobs.ps1` (below); use whichever you're more
+comfortable reading.
+
+**Real measured timings**, from the run that produced this paper's numbers (16GB
+Windows machine, 4 parallel bundle-building workers, local Ollama): building
+1,504 evidence bundles took ~1h56m; `qwen3:8b`'s full main-experiment arm
+~1h32m, `gemma4:12b`'s ~3h16m (larger model, slower); the adversarial axis
+(4 attacks × flat/provenance, ~530 judged cases) ~1h34m; the reliability axis
+(1,100 jobs: 5 repeats + 3 orders + 3 ablations × 100 routed samples) ~2h14m.
+Budget the better part of a day for both local-model arms end to end; the
+claims-verification axis is comparatively fast (a few claims judged per
+narrative, ~1-2 LLM calls per claim).
+
+The commands themselves, unwrapped:
+
 ```bash
 export EMBER_MODEL_PATH=/path/to/EMBER2024_all.model
 unset KNOWN_GOOD_HASHES_PATH   # never let the allowlist decide research numbers
@@ -190,6 +214,20 @@ McNemar's test for the paired comparison against EMBER-alone.
   silently truncate its own dataset is exactly the kind of methodology
   bug the "Transcending"/TESSERACT literature this project already cites
   warns about in a different form.
+- **A second, smaller incident of the same species**: a local `research_out/`
+  cleanup pass performed while the reliability/claims experiments were still
+  running attempted to relocate `jobs.log` and `llm_cache/`. The log file's
+  move silently failed (the OS held it open for append), which was safe by
+  luck; the cache directory's move *succeeded*, and the still-running worker
+  immediately recreated an empty `llm_cache/` at the old path and started
+  writing new entries there — splitting the cache in two. Caught within
+  minutes by checking whether the old path had been recreated; fixed by
+  merging the small number of newly-written entries back with a
+  non-clobbering copy before restoring the original path. No experiment data
+  was lost, but it is the same lesson as above in miniature: never
+  reorganize storage a live process is reading or writing, and when in doubt,
+  merge rather than overwrite. See `research_out/README.md` for the standing
+  rule this produced (which paths are safe to reorganize and which aren't).
 
 ## 7. Where the code lives
 
