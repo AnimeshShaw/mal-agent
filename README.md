@@ -326,6 +326,15 @@ Full index: [docs/README.md](docs/README.md). Highlights:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how it works),
 [docs/SETUP.md](docs/SETUP.md) (install).
 
+## Citing this work
+
+If you use this software, cite it via [CITATION.cff](CITATION.cff) (GitHub's
+"Cite this repository" button reads this file automatically) or the Zenodo
+DOI once a release is archived there. If you use the accompanying research
+(dataset v2, the evidence-bundle/routing/adjudication architecture, or any
+reported evaluation numbers), see [docs/RESEARCH.md](docs/RESEARCH.md) and
+[paper/](paper/) for the paper to cite once it's public.
+
 ## Contributing
 
 Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
