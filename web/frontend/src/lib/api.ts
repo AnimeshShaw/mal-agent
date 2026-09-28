@@ -4,22 +4,17 @@ import type { AnalyzeOptions, AppConfig, RunDetail, RunSummary } from "./types";
 // backend serves this build from the same origin.
 const API = "/api";
 
-function tokenHeaders(): HeadersInit {
+function token(): string | null {
   try {
-    const t = localStorage.getItem("malagent.token");
-    return t ? { "X-Mal-Agent-Token": t } : {};
+    return localStorage.getItem("malagent.token");
   } catch {
-    return {};
+    return null;
   }
 }
 
-function tokenQuery(): string {
-  try {
-    const t = localStorage.getItem("malagent.token");
-    return t ? `?token=${encodeURIComponent(t)}` : "";
-  } catch {
-    return "";
-  }
+function tokenHeaders(): HeadersInit {
+  const t = token();
+  return t ? { "X-Mal-Agent-Token": t } : {};
 }
 
 async function json<T>(resp: Response, what: string): Promise<T> {
@@ -61,25 +56,65 @@ export async function createAnalysis(opts: AnalyzeOptions): Promise<{ run_id: st
   );
 }
 
-export function reportUrl(runId: string, format: "txt" | "html" | "md"): string {
-  return `${API}/analyses/${runId}/report.${format}${tokenQuery()}`;
+/**
+ * Fetches a rendered report with the real auth header (a plain <a href>
+ * can't set one) and hands back a same-origin object URL to open or
+ * download it from — the bearer token itself never appears in a URL, so it
+ * can't land in browser history or a proxy's access log.
+ * Caller owns the URL and should revokeObjectURL it when done with it.
+ */
+export async function fetchReportUrl(runId: string, format: "txt" | "html" | "md"): Promise<string> {
+  const resp = await fetch(`${API}/analyses/${runId}/report.${format}`, { headers: tokenHeaders() });
+  if (!resp.ok) throw new Error(`could not load the ${format} report (HTTP ${resp.status})`);
+  return URL.createObjectURL(await resp.blob());
 }
 
-/** Live progress lines over SSE. Returns an unsubscribe function. */
+/**
+ * Live progress lines over SSE. EventSource can't send a custom header, so
+ * when a token is configured this first exchanges it (via a normal,
+ * header-authenticated POST) for a short-lived, single-use, run-scoped
+ * ticket and connects with that instead — see the backend's tickets.py.
+ * Returns an unsubscribe function.
+ */
 export function subscribeToProgress(
   runId: string,
   onLine: (line: string) => void,
   onDone: (status: string) => void,
 ): () => void {
-  const source = new EventSource(`${API}/analyses/${runId}/events${tokenQuery()}`);
-  source.onmessage = (e) => onLine(e.data);
-  source.addEventListener("done", (e) => {
-    onDone((e as MessageEvent).data);
-    source.close();
-  });
-  source.onerror = () => {
-    source.close();
-    onDone("disconnected");
+  let source: EventSource | null = null;
+  let cancelled = false;
+
+  async function connect() {
+    let qs = "";
+    const t = token();
+    if (t) {
+      const resp = await fetch(`${API}/analyses/${runId}/events/ticket`, {
+        method: "POST",
+        headers: tokenHeaders(),
+      });
+      if (!resp.ok) {
+        onDone("disconnected");
+        return;
+      }
+      const { ticket } = await resp.json();
+      qs = `?ticket=${encodeURIComponent(ticket)}`;
+    }
+    if (cancelled) return;
+    source = new EventSource(`${API}/analyses/${runId}/events${qs}`);
+    source.onmessage = (e) => onLine(e.data);
+    source.addEventListener("done", (e) => {
+      onDone((e as MessageEvent).data);
+      source?.close();
+    });
+    source.onerror = () => {
+      source?.close();
+      onDone("disconnected");
+    };
+  }
+  connect();
+
+  return () => {
+    cancelled = true;
+    source?.close();
   };
-  return () => source.close();
 }

@@ -74,6 +74,7 @@ export interface JudgeResult {
   model: string;
   provider: string;
   latency_ms: number;
+  aliases?: Record<string, string>;
 }
 
 export interface Adjudication {

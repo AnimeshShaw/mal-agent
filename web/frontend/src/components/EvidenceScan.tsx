@@ -186,7 +186,12 @@ export function FindingsList({ findings, onFocus }: { findings: Finding[]; onFoc
                       </button>
                     )}
                   </div>
-                  {f.indication && <p className="mt-1 text-sm text-ink-3">{f.indication}</p>}
+                  {f.indication && (
+                    <details className="mt-1 text-sm">
+                      <summary className="cursor-pointer text-ink-3 hover:text-ink-2">How this counts</summary>
+                      <p className="mt-1 text-ink-3">{f.indication}</p>
+                    </details>
+                  )}
                 </div>
               </div>
             </li>

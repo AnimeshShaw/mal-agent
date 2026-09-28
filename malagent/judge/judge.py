@@ -70,6 +70,7 @@ class JudgeResult:
     cached: bool = False
     mode: str = "provenance"
     prompt_version: str = PROMPT_VERSION
+    aliases: dict = field(default_factory=dict)   # E# alias -> real evidence id, as rendered
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -109,7 +110,8 @@ def adjudicate(bundle: dict, provider, *, mode: str = "provenance", drop=frozens
                max_tokens: int = 700, system_prompt: str = SYSTEM_PROMPT) -> JudgeResult:
     rendered = render_evidence(bundle, mode=mode, drop=drop, order_seed=order_seed)
     res = JudgeResult(verdict="abstain", raw_verdict=None, confidence=0.0, mode=mode,
-                      model=getattr(provider, "model", ""), provider=getattr(provider, "name", ""))
+                      model=getattr(provider, "model", ""), provider=getattr(provider, "name", ""),
+                      aliases=dict(rendered.id_map))
     try:
         g = provider.generate(system_prompt, build_user_prompt(rendered.text),
                               temperature=temperature, seed=seed, json_mode=True,

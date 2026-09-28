@@ -150,3 +150,47 @@ def test_detail_payload_has_evidence_provenance_and_route(fresh, monkeypatch):
     body = _wait(c, rid)
     for key in ("sample", "ember", "gate", "route", "tools", "findings", "evidence", "attack"):
         assert key in body, key
+
+
+def test_events_ticket_requires_the_real_token(fresh, monkeypatch, tmp_path):
+    """Minting a ticket is itself a normal, header-authenticated /api/ call --
+    only the SSE GET it unlocks skips the header (EventSource can't send one)."""
+    monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze())
+    c = TestClient(create_app(token="s3cret"))
+    rid = c.post("/api/analyses", files={"file": ("a", b"MZ", "x")},
+                 headers={"X-Mal-Agent-Token": "s3cret"}).json()["run_id"]
+    assert c.post(f"/api/analyses/{rid}/events/ticket").status_code == 401
+    r = c.post(f"/api/analyses/{rid}/events/ticket", headers={"X-Mal-Agent-Token": "s3cret"})
+    assert r.status_code == 200 and "ticket" in r.json()
+
+
+def test_events_stream_requires_a_valid_ticket_when_token_configured(fresh, monkeypatch):
+    monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze())
+    c = TestClient(create_app(token="s3cret"))
+    rid = c.post("/api/analyses", files={"file": ("a", b"MZ", "x")},
+                 headers={"X-Mal-Agent-Token": "s3cret"}).json()["run_id"]
+    # No ticket, and no header either (this is the one endpoint that must
+    # work for a plain EventSource): rejected.
+    assert c.get(f"/api/analyses/{rid}/events").status_code == 401
+    ticket = c.post(f"/api/analyses/{rid}/events/ticket",
+                    headers={"X-Mal-Agent-Token": "s3cret"}).json()["ticket"]
+    with c.stream("GET", f"/api/analyses/{rid}/events?ticket={ticket}") as r:
+        assert r.status_code == 200
+    # single-use: the same ticket doesn't work twice
+    with c.stream("GET", f"/api/analyses/{rid}/events?ticket={ticket}") as r:
+        assert r.status_code == 401
+
+
+def test_events_stream_needs_no_ticket_when_no_token_configured(fresh, monkeypatch):
+    monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze())
+    c = TestClient(create_app())
+    rid = c.post("/api/analyses", files={"file": ("a", b"MZ", "x")}).json()["run_id"]
+    with c.stream("GET", f"/api/analyses/{rid}/events") as r:
+        assert r.status_code == 200
+
+
+def test_query_string_token_no_longer_accepted_anywhere(fresh):
+    """The old '?token=' fallback let a long-lived secret land in browser
+    history and access logs on every endpoint, not just SSE -- closed."""
+    c = TestClient(create_app(token="s3cret"))
+    assert c.get("/api/analyses?token=s3cret").status_code == 401

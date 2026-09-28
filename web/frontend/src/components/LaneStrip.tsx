@@ -1,6 +1,6 @@
 import { ArrowRight, ArrowDown, ShieldCheck, WarningDiamond, Scales } from "@phosphor-icons/react";
 import type { RunDetail } from "../lib/types";
-import { FUSION, ROUTE_REASON, TONE_TEXT, VERDICT, formatLabel } from "../lib/vocab";
+import { FUSION, ROUTE_REASON, TONE_TEXT, VERDICT, formatLabel, toolName } from "../lib/vocab";
 import { Chip } from "./ui";
 
 const GRAY_LOW = 0.05;
@@ -45,10 +45,16 @@ function Station({
   title,
   children,
   tone = "idle",
+  hideTitle = false,
 }: {
   title: string;
   children: React.ReactNode;
   tone?: "idle" | "inspect" | "clear" | "alarm";
+  // The Verdict station's body is a display-scale headline (the verdict
+  // word itself) -- a small-caps label sitting above it would be a kicker
+  // over a heading, which the craft floor bans outright. Its lamp still
+  // carries the station's identity; the title stays for screen readers.
+  hideTitle?: boolean;
 }) {
   const lamp: Record<string, string> = {
     idle: "bg-idle",
@@ -57,11 +63,16 @@ function Station({
     alarm: "bg-alarm shadow-[0_0_8px_var(--alarm)]",
   };
   return (
-    <div className="min-w-0 rounded-md border border-rule bg-panel p-4">
-      <div className="mb-2 flex items-center gap-2 font-sign text-[13px] font-bold uppercase tracking-wider text-ink-3">
+    <div className="relative min-w-0 rounded-md border border-rule bg-panel p-4">
+      <div
+        className={`mb-2 flex items-center gap-2 font-sign text-[13px] font-bold uppercase tracking-wider text-ink-3 ${hideTitle ? "sr-only" : ""}`}
+      >
         <span aria-hidden className={`h-2 w-2 rounded-full ${lamp[tone]}`} />
         {title}
       </div>
+      {hideTitle && (
+        <span aria-hidden className={`absolute right-4 top-4 h-2 w-2 rounded-full ${lamp[tone]}`} />
+      )}
       {children}
     </div>
   );
@@ -69,7 +80,7 @@ function Station({
 
 function Connector({ label, tone }: { label: string; tone: "clear" | "inspect" }) {
   return (
-    <div className={`flex items-center justify-center gap-1.5 py-1 lg:flex-col lg:py-0 ${TONE_TEXT[tone]}`}>
+    <div className={`flex items-center justify-center gap-1.5 py-1 lg:mt-14 lg:flex-col lg:py-0 ${TONE_TEXT[tone]}`}>
       <ArrowDown weight="bold" className="h-4 w-4 lg:hidden" aria-hidden />
       <ArrowRight weight="bold" className="hidden h-5 w-5 lg:block" aria-hidden />
       <span className="font-sign text-[12px] font-bold uppercase tracking-wider lg:max-w-[76px] lg:text-center">
@@ -81,6 +92,7 @@ function Connector({ label, tone }: { label: string; tone: "clear" | "inspect" }
 
 export function LaneStrip({ run }: { run: RunDetail }) {
   const v = run.verdict!;
+  const evById = new Map((run.evidence ?? []).map((e) => [e.id, e]));
   const verdict = VERDICT[v.verdict];
   const ember = run.ember;
   const route = run.route ?? { routed: false, reasons: [] };
@@ -93,7 +105,7 @@ export function LaneStrip({ run }: { run: RunDetail }) {
     : null;
 
   return (
-    <div className="scan-sweep grid gap-2 lg:grid-cols-[minmax(0,1fr)_84px_minmax(0,1fr)_84px_minmax(0,1.15fr)] lg:items-stretch">
+    <div className="scan-sweep grid gap-2 lg:grid-cols-[minmax(0,1fr)_84px_minmax(0,1.2fr)_84px_minmax(0,1fr)] lg:items-start">
       <Station title="Primary screening" tone={route.routed ? "inspect" : "clear"}>
         {shown == null ? (
           <p className="text-ink-2">The classifier did not run (no model configured).</p>
@@ -171,12 +183,28 @@ export function LaneStrip({ run }: { run: RunDetail }) {
                     Set aside: {judge.errors.join("; ") || "the answer could not be validated"}.
                   </p>
                 )}
-                {judge.rationale && <p className="mt-1.5 text-sm text-ink-2">{judge.rationale}</p>}
+                {judge.rationale && (
+                  <p className="mt-1.5 text-sm text-ink-2">
+                    {judge.rationale.split(/(\bE\d+\b)/).map((part, i) => {
+                      const id = /^E\d+$/.test(part) ? judge.aliases?.[part] : undefined;
+                      const ev = id ? evById.get(id) : undefined;
+                      return ev ? (
+                        <a key={i} href={`#ev-${ev.id}`} className="text-tool hover:underline" title={ev.locator}>
+                          {toolName(ev.tool)}
+                        </a>
+                      ) : (
+                        <span key={i}>{part}</span>
+                      );
+                    })}
+                  </p>
+                )}
                 {judge.cited.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {judge.cited.map((id, i) => (
                       <a key={id} href={`#ev-${id}`} className="hover:underline">
-                        <Chip tone={judge.cited_provenance[i] === "tool" ? "tool" : "sample"}>cites {id.slice(0, 14)}</Chip>
+                        <Chip tone={judge.cited_provenance[i] === "tool" ? "tool" : "sample"}>
+                          {evById.get(id) ? toolName(evById.get(id)!.tool) : "evidence"}
+                        </Chip>
                       </a>
                     ))}
                   </div>
@@ -189,9 +217,10 @@ export function LaneStrip({ run }: { run: RunDetail }) {
 
       <Connector label="Decision" tone={route.routed ? "inspect" : "clear"} />
 
-      <Station title="Verdict" tone={verdict.tone === "idle" ? "idle" : (verdict.tone as "alarm" | "clear" | "inspect")}>
-        <div className="flex items-end justify-between gap-3">
-          <div className={`font-sign text-5xl font-bold uppercase leading-none tracking-wide ${TONE_TEXT[verdict.tone]}`}>
+      <Station title="Verdict" hideTitle
+              tone={verdict.tone === "idle" ? "idle" : (verdict.tone as "alarm" | "clear" | "inspect")}>
+        <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+          <div className={`min-w-0 break-words font-sign text-4xl font-bold uppercase leading-none tracking-wide 2xl:text-5xl ${TONE_TEXT[verdict.tone]}`}>
             {verdict.label}
           </div>
           <div className="text-right">

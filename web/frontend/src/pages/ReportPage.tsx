@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowSquareOut, DownloadSimple, Spinner, Warning } from "@phosphor-icons/react";
-import { getRun, reportUrl, subscribeToProgress } from "../lib/api";
+import { fetchReportUrl, getRun, subscribeToProgress } from "../lib/api";
 import type { RunDetail } from "../lib/types";
 import { FUSION, bytes, formatLabel, when } from "../lib/vocab";
 import { LaneStrip } from "../components/LaneStrip";
@@ -87,10 +87,66 @@ function LiveBelt({ run, lines }: { run: RunDetail; lines: string[] }) {
   );
 }
 
+/**
+ * Fetches the report with the real auth header and opens/downloads it as a
+ * blob URL, so a bearer token never has to travel in a plain <a href>
+ * (which can't set headers) or end up in browser history.
+ */
+function ReportLink({
+  run,
+  format,
+  icon: Icon,
+  label,
+  openInNewTab,
+  download,
+}: {
+  run: RunDetail;
+  format: "html" | "txt";
+  icon: typeof ArrowSquareOut;
+  label: string;
+  openInNewTab?: boolean;
+  download?: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const url = await fetchReportUrl(run.run_id, format);
+          if (download) {
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${run.filename ?? run.run_id}.${format}`;
+            a.click();
+          } else if (openInNewTab) {
+            window.open(url, "_blank", "noopener,noreferrer");
+          }
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 rounded-md border border-rule bg-panel px-3 py-1.5 text-sm text-ink-2 hover:text-ink disabled:opacity-50"
+    >
+      {busy ? <Spinner weight="bold" className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Icon weight="bold" className="h-3.5 w-3.5" aria-hidden />}
+      {label}
+    </button>
+  );
+}
+
 function Report({ run }: { run: RunDetail }) {
   const [focus, setFocus] = useState<Set<string>>(new Set());
   const evRef = useRef<HTMLDivElement>(null);
-  const unresolved = useMemo(() => Array.from(new Set(run.unresolved ?? [])), [run.unresolved]);
+  // Setup notices (a tool not configured/installed) belong with tool coverage;
+  // what the analysis itself could not settle is shown first.
+  const [unresolved, setupGaps] = useMemo(() => {
+    const all = Array.from(new Set(run.unresolved ?? []));
+    const setup = /not configured|not installed|not on PATH|No model configured|not set\b|set [A-Z_]{6,}|not found \(set/i;
+    return [all.filter((u) => !setup.test(u)), all.filter((u) => setup.test(u))];
+  }, [run.unresolved]);
 
   function focusEvidence(ids: string[]) {
     setFocus(new Set(ids));
@@ -117,23 +173,8 @@ function Report({ run }: { run: RunDetail }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <a
-            href={reportUrl(run.run_id, "html")}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-md border border-rule bg-panel px-3 py-1.5 text-sm text-ink-2 hover:text-ink"
-          >
-            <ArrowSquareOut weight="bold" className="h-3.5 w-3.5" aria-hidden />
-            HTML report
-          </a>
-          <a
-            href={reportUrl(run.run_id, "txt")}
-            download
-            className="inline-flex items-center gap-1.5 rounded-md border border-rule bg-panel px-3 py-1.5 text-sm text-ink-2 hover:text-ink"
-          >
-            <DownloadSimple weight="bold" className="h-3.5 w-3.5" aria-hidden />
-            Full text report
-          </a>
+          <ReportLink run={run} format="html" icon={ArrowSquareOut} label="HTML report" openInNewTab />
+          <ReportLink run={run} format="txt" icon={DownloadSimple} label="Full text report" download />
         </div>
       </div>
 
@@ -163,7 +204,14 @@ function Report({ run }: { run: RunDetail }) {
           )}
 
           <div>
-            <SectionHead title="Findings" aside="Which way each one points" />
+            <SectionHead
+              title="Findings"
+              aside={
+                run.gate
+                  ? `Corroboration: ${run.gate.categories.length} of ${run.gate.required} categories needed to convict on evidence alone`
+                  : "Which way each one points"
+              }
+            />
             <Panel>
               <FindingsList findings={run.findings ?? []} onFocus={focusEvidence} />
             </Panel>
@@ -185,15 +233,31 @@ function Report({ run }: { run: RunDetail }) {
             </Panel>
           </div>
 
-          {unresolved.length > 0 && (
+          {(unresolved.length > 0 || setupGaps.length > 0) && (
             <div>
               <SectionHead title="Could not determine" />
               <Panel className="px-4 py-3">
-                <ul className="space-y-2 text-sm text-ink-2">
-                  {unresolved.slice(0, 30).map((u, i) => (
-                    <li key={i}>{u}</li>
-                  ))}
-                </ul>
+                {unresolved.length > 0 ? (
+                  <ul className="space-y-2 text-sm text-ink-2">
+                    {unresolved.slice(0, 30).map((u, i) => (
+                      <li key={i}>{u}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-ink-3">Nothing the analysis itself left open.</p>
+                )}
+                {setupGaps.length > 0 && (
+                  <details className="mt-3 border-t border-rule pt-2 text-sm">
+                    <summary className="cursor-pointer text-ink-3 hover:text-ink-2">
+                      {setupGaps.length} tools not set up on this machine
+                    </summary>
+                    <ul className="mt-2 space-y-2 text-ink-3">
+                      {setupGaps.map((u, i) => (
+                        <li key={i}>{u}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </Panel>
             </div>
           )}

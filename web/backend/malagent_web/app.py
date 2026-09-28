@@ -28,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import runs
 from .payload import build_detail
+from .tickets import TicketStore
 
 _DEFAULT_FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 _SSE_POLL_INTERVAL_S = 0.2
@@ -59,12 +60,20 @@ def create_app(frontend_dist: Optional[Path] = None, *, store: Optional[runs.Run
     runs.set_store(store)
     max_bytes = max_upload_mb * 1024 * 1024
 
+    tickets = TicketStore()
+
     if token:
         @app.middleware("http")
         async def _require_token(request: Request, call_next):
-            if request.url.path.startswith("/api/") and request.url.path != "/api/health":
-                given = (request.headers.get("x-mal-agent-token")
-                         or request.query_params.get("token") or "")
+            # EventSource cannot set a custom header, and this endpoint is the
+            # only one a browser can reach without one -- everywhere else
+            # (including minting a ticket) needs the real header token, so a
+            # long-lived secret never has to travel in a URL, browser history,
+            # or a proxy's access log. A ticket is single-use and run-scoped
+            # (see tickets.py); it is checked by the route itself, not here.
+            is_events = request.url.path.startswith("/api/analyses/") and request.url.path.endswith("/events")
+            if request.url.path.startswith("/api/") and request.url.path != "/api/health" and not is_events:
+                given = request.headers.get("x-mal-agent-token") or ""
                 if not hmac.compare_digest(given, token):
                     return JSONResponse({"detail": "missing or invalid token"}, status_code=401)
             return await call_next(request)
@@ -106,7 +115,14 @@ def create_app(frontend_dist: Optional[Path] = None, *, store: Optional[runs.Run
             # display metadata. The bytes land under a neutral name so a
             # sample is never written to disk with an executable extension.
             filename = Path(file.filename).name or "upload.bin"
-            cleanup_dir = mkdtemp(prefix="malagent_web_")
+            # Staged next to the quarantine rather than in the OS temp dir: an
+            # analyst machine's antivirus typically has an exclusion for the
+            # analysis workspace but will silently quarantine a live sample the
+            # moment it lands in %TEMP% (seen live: a malicious .js upload
+            # vanished between write and read, surfacing as OSError 22).
+            incoming = Path(os.getenv("MAL_AGENT_UPLOAD_DIR", "quarantine/incoming"))
+            incoming.mkdir(parents=True, exist_ok=True)
+            cleanup_dir = mkdtemp(prefix="upload_", dir=str(incoming))
             target = Path(cleanup_dir) / "upload.bin"
             size = 0
             with open(target, "wb") as fh:
@@ -153,11 +169,22 @@ def create_app(frontend_dist: Optional[Path] = None, *, store: Optional[runs.Run
             result["progress"] = run.progress[-400:]
         return result
 
+    @app.post("/api/analyses/{run_id}/events/ticket")
+    def mint_event_ticket(run_id: str):
+        """Exchanges the real (header-authenticated) token for a short-lived,
+        single-use, run-scoped ticket the browser's EventSource can carry in
+        its URL instead -- see tickets.py for why that split matters."""
+        if runs.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return {"ticket": tickets.mint(run_id), "expires_in": tickets.ttl_s}
+
     @app.get("/api/analyses/{run_id}/events")
-    async def get_events(run_id: str):
+    async def get_events(run_id: str, ticket: Optional[str] = None):
         run = runs.get_run(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
+        if token and not tickets.redeem(ticket or "", run_id):
+            raise HTTPException(status_code=401, detail="missing or invalid ticket")
 
         async def _stream():
             sent = 0
