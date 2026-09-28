@@ -1,7 +1,7 @@
 import { ArrowRight, ArrowDown, ShieldCheck, WarningDiamond, Scales } from "@phosphor-icons/react";
 import type { RunDetail } from "../lib/types";
 import { FUSION, ROUTE_REASON, TONE_TEXT, VERDICT, formatLabel, toolName } from "../lib/vocab";
-import { Chip } from "./ui";
+import { Chip, Swatch } from "./ui";
 
 const GRAY_LOW = 0.05;
 const GRAY_HIGH = 0.3;
@@ -70,9 +70,6 @@ function Station({
         <span aria-hidden className={`h-2 w-2 rounded-full ${lamp[tone]}`} />
         {title}
       </div>
-      {hideTitle && (
-        <span aria-hidden className={`absolute right-4 top-4 h-2 w-2 rounded-full ${lamp[tone]}`} />
-      )}
       {children}
     </div>
   );
@@ -83,7 +80,7 @@ function Connector({ label, tone }: { label: string; tone: "clear" | "inspect" }
     <div className={`flex items-center justify-center gap-1.5 py-1 lg:mt-14 lg:flex-col lg:py-0 ${TONE_TEXT[tone]}`}>
       <ArrowDown weight="bold" className="h-4 w-4 lg:hidden" aria-hidden />
       <ArrowRight weight="bold" className="hidden h-5 w-5 lg:block" aria-hidden />
-      <span className="font-sign text-[12px] font-bold uppercase tracking-wider lg:max-w-[76px] lg:text-center">
+      <span className="sr-only font-sign text-[12px] font-bold uppercase tracking-wider lg:not-sr-only lg:max-w-[76px] lg:text-center">
         {label}
       </span>
     </div>
@@ -220,8 +217,11 @@ export function LaneStrip({ run }: { run: RunDetail }) {
       <Station title="Verdict" hideTitle
               tone={verdict.tone === "idle" ? "idle" : (verdict.tone as "alarm" | "clear" | "inspect")}>
         <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-          <div className={`min-w-0 break-words font-sign text-4xl font-bold uppercase leading-none tracking-wide 2xl:text-5xl ${TONE_TEXT[verdict.tone]}`}>
-            {verdict.label}
+          <div className="flex min-w-0 items-baseline gap-2.5">
+            <Swatch tone={verdict.tone} className="mb-1 h-2.5 w-2.5 shrink-0" />
+            <div className={`break-words font-sign text-4xl font-bold uppercase leading-none tracking-wide 2xl:text-5xl ${TONE_TEXT[verdict.tone]}`}>
+              {verdict.label}
+            </div>
           </div>
           <div className="text-right">
             <div className="data text-xl text-ink">{v.confidence.toFixed(2)}</div>
