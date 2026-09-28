@@ -203,19 +203,25 @@ evaluating or contributing to this project.
   silently reusing an existing one (see `docs/ARCHITECTURE.md` §7). Not
   live-verified — no API key was available in this project's own
   development.
-- **ML classifier decides the verdict (EMBER2024):** a real pretrained
-  LightGBM classifier (3.2M training files) that, when configured,
-  decides malicious/benign alone by default (`--fusion-mode=simple`) —
-  validated with perfect precision/recall/F1 on a genuinely held-out
-  57-sample set (zero overlap with the samples used to calibrate it).
-  The other eleven triage tools become evidence and explanation, not a
-  vote: every finding is annotated with what it indicates and whether it
-  supports or contradicts the verdict, and every tool is accounted for
-  in the report whether it ran, was skipped, or errored. The original
-  fusion design (Confidence-Gated Evidence Fusion, where the
-  deterministic gate votes in EMBER's gray zone) is preserved as an
-  opt-in mode (`--fusion-mode=cgef`) for ongoing research — see
-  `docs/ML_CLASSIFIER_PLAN.md` §10-11. `pip install thrember` from
+- **ML classifier decides the verdict, for PE files (EMBER2024):** a real
+  pretrained LightGBM classifier (3.2M training files) that, when
+  configured, decides malicious/benign alone by default
+  (`--fusion-mode=simple`) — but **only for PE files**: EMBER2024 is
+  PE-trained, and a real, measured check found 94/117 benign non-PE files
+  (documents, scripts, archives) scoring above the production threshold,
+  so a non-PE score is now shown as context and never decides (see
+  `docs/RESEARCH.md` §1). The other triage tools (now including
+  format-aware analysis of scripts, LNK shortcuts, Office/RTF documents
+  and PDFs — `malagent/format_triage.py`) become evidence and explanation:
+  every finding is annotated with what it indicates and whether it
+  supports or contradicts the verdict, and every tool is accounted for in
+  the report whether it ran, was skipped, or errored. Two research
+  fusion modes are preserved as opt-in: `--fusion-mode=cgef` (the
+  deterministic gate votes in EMBER's gray zone) and `--fusion-mode=judge`
+  (an LLM adjudicator, `--judge-model provider:model`, decides only
+  routed hard cases and must cite tool evidence — see `docs/RESEARCH.md`
+  for the full design and how to reproduce its evaluation). `pip install
+  thrember` from
   [FutureComputing4AI/EMBER2024](https://github.com/FutureComputing4AI/EMBER2024)
   (Apache-2.0) **and** `pip install "signify==0.7.1"` specifically —
   `thrember` pins `signify>=0.7.1` with no upper bound, and the latest
@@ -223,8 +229,8 @@ evaluating or contributing to this project.
   live during setup). Download a `.model` file from
   [huggingface.co/joyce8/EMBER2024-benchmark-models](https://huggingface.co/joyce8/EMBER2024-benchmark-models)
   (~3.5MB, no need to download the full 3.2M-file dataset), set
-  `EMBER_MODEL_PATH`. See `docs/ML_CLASSIFIER_PLAN.md` for the full
-  reasoning, real calibration numbers, and honest caveats.
+  `EMBER_MODEL_PATH`. See `docs/RESEARCH.md` for the full reasoning,
+  current numbers, and honest caveats.
 - **Per-function decompilation + call-graph tracing** between decompiled
   functions: `pip install -e ".[ghidra]"` (pyghidra),
   install Ghidra itself, and set `GHIDRA_HOME` to the install root. Ghidra
@@ -284,12 +290,13 @@ round-tripping a real run's verdict.
 ## Testing
 
 ```bash
-pip install pytest && pytest -q
+pip install pytest && pytest -q          # core suite
+pytest -q web/backend                    # web UI backend
 ```
 
-400+ tests, TDD throughout — every feature was built failing-test-first.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow this project
-expects contributions to follow.
+663 tests across both suites, TDD throughout — every feature was built
+failing-test-first. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+workflow this project expects contributions to follow.
 
 ## Roadmap
 
@@ -297,20 +304,21 @@ M0 deterministic spine → M1 local model summaries → M2 headless-Ghidra
 decompilation → M3 cloud escalation + egress enforcement → M4 ATT&CK +
 YARA + retrieval-grounded narrative → M4.5 LLM reasoning agents
 (behavioral narrative + fact-checking critic) → mandatory unabridged
-`.txt` reporting → `doctor` + install automation — all shipped and
-verified live. M5 (dynamic detonation) is stubbed by design (v1 is
-static-only). M6 (calibration against labeled malware/benign datasets)
-has real infrastructure and numbers now — see `docs/TODO.md` for the
-current state of each sub-item (family-attribution macro-F1, deterministic
-calibration bands, adversarial robustness, ablation studies). A pretrained
-ML classifier (EMBER2024) decides the verdict alone by default
-(`--fusion-mode=simple`) — a genuinely held-out, non-overlapping 57-sample
-evaluation validated perfect precision/recall/F1, versus 61% undetermined
-and real false positives from the old deterministic-gate-alone approach.
-The original fusion design (Confidence-Gated Evidence Fusion, where the
-gate votes in EMBER's gray zone) is preserved as an opt-in research mode
-(`--fusion-mode=cgef`) — see `docs/ML_CLASSIFIER_PLAN.md` §10-11 for the
-full numbers and the decision.
+`.txt` reporting → `doctor` + install automation → format-aware triage
+for non-PE lures (scripts/LNK/Office/PDF) → a redesigned local web UI —
+all shipped and verified live. M5 (dynamic detonation) is stubbed by
+design (v1 is static-only). The current research question — whether a
+bounded, evidence-gated LLM adjudicator improves on EMBER2024 alone for
+the specific cases it's genuinely unsure about — has a full
+bundle/routing/adjudication architecture, a 1,504-sample dataset spanning
+15+ file formats, and a reproducible experiment harness
+(`mal-agent research build-bundles|judge-run|judge-claims|judge-report`);
+see [docs/RESEARCH.md](docs/RESEARCH.md) for the design, how to reproduce
+it, and the honestly-stated limitations (including a real evaluation-
+validity bug this project found and fixed in its own earlier numbers: a
+benign-set/known-good-allowlist overlap had made several previously
+reported precision/recall/F1 figures artifacts of a hash lookup, not
+analysis).
 
 ## Documentation
 
