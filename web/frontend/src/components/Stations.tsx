@@ -35,11 +35,11 @@ function StationRow({ t }: { t: ToolReportEntry }) {
       </button>
       {open && (
         <div className="space-y-2 px-4 pb-3 pl-9 text-sm">
-          {t.purpose && <p className="text-ink-3">{t.purpose}</p>}
-          {t.reason && <p className="text-ink-2">{t.reason}</p>}
-          {t.notes && <p className="data text-ink-3">{t.notes}</p>}
+          {t.purpose && <p className="break-words text-ink-3">{t.purpose}</p>}
+          {t.reason && <p className="break-words text-ink-2">{t.reason}</p>}
+          {t.notes && <p className="data break-words text-ink-3">{t.notes}</p>}
           {t.unresolved.map((u, i) => (
-            <p key={i} className="text-inspect">
+            <p key={i} className="break-words text-inspect">
               {u}
             </p>
           ))}
@@ -48,7 +48,7 @@ function StationRow({ t }: { t: ToolReportEntry }) {
               {t.findings.map((f, i) => (
                 <li key={i} className="flex gap-2">
                   <Swatch tone={DIRECTION[f.direction].tone} className="mt-[6px]" />
-                  <span className="text-ink-2">{f.claim}</span>
+                  <span className="break-words text-ink-2">{f.claim}</span>
                 </li>
               ))}
             </ul>

@@ -142,7 +142,7 @@ export function LaneStrip({ run }: { run: RunDetail }) {
                   <WarningDiamond weight="fill" className="mt-0.5 h-4 w-4 shrink-0 text-inspect" aria-hidden />
                   <span>
                     <span className="font-medium text-ink">{ROUTE_REASON[r]?.label ?? r}.</span>{" "}
-                    <span className="text-ink-2">{ROUTE_REASON[r]?.detail}</span>
+                    <span className="break-words text-ink-2">{ROUTE_REASON[r]?.detail}</span>
                   </span>
                 </li>
               ))}
@@ -184,7 +184,7 @@ export function LaneStrip({ run }: { run: RunDetail }) {
                   </p>
                 )}
                 {judge.rationale && (
-                  <p className="mt-1.5 text-sm text-ink-2">
+                  <p className="mt-1.5 break-words text-sm text-ink-2">
                     {judge.rationale.split(/(\bE\d+\b)/).map((part, i) => {
                       const id = /^E\d+$/.test(part) ? judge.aliases?.[part] : undefined;
                       const ev = id ? evById.get(id) : undefined;

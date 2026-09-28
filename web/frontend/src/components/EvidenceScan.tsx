@@ -168,7 +168,7 @@ export function FindingsList({ findings, onFocus }: { findings: Finding[]; onFoc
               <div className="flex items-start gap-3">
                 <Swatch tone={DIRECTION[f.direction].tone} className="mt-[7px]" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-ink">{f.claim}</p>
+                  <p className="break-words text-ink">{f.claim}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     <Chip tone={f.severity === "high" || f.severity === "critical" ? "alarm" : "idle"}>{f.severity}</Chip>
                     {f.attack.map((t) => (
@@ -189,7 +189,7 @@ export function FindingsList({ findings, onFocus }: { findings: Finding[]; onFoc
                   {f.indication && (
                     <details className="mt-1 text-sm">
                       <summary className="cursor-pointer text-ink-3 hover:text-ink-2">How this counts</summary>
-                      <p className="mt-1 text-ink-3">{f.indication}</p>
+                      <p className="mt-1 break-words text-ink-3">{f.indication}</p>
                     </details>
                   )}
                 </div>

@@ -27,7 +27,13 @@ const TOOL_LINE = /^\[(triage|static)\] \((\d+)\/(\d+)\) ([\w-]+): (\w+)/;
 function LiveBelt({ run, lines }: { run: RunDetail; lines: string[] }) {
   const elapsed = useElapsed(run.created_at, true);
   const endRef = useRef<HTMLLIElement>(null);
-  useEffect(() => endRef.current?.scrollIntoView({ block: "nearest" }), [lines.length]);
+  useEffect(() => {
+    // scrollIntoView() returns a Promise in some Chromium builds; returning
+    // that expression directly from the effect would hand React a
+    // non-function "cleanup" and crash on the next re-run (real bug, found
+    // live: the browser's return value, not React's).
+    endRef.current?.scrollIntoView({ block: "nearest" });
+  }, [lines.length]);
   const latest = [...lines].reverse().find((l) => l.startsWith("[pipeline]"));
   const done = lines.filter((l) => TOOL_LINE.test(l));
   const last = done.length ? done[done.length - 1].match(TOOL_LINE) : null;
@@ -197,7 +203,7 @@ function Report({ run }: { run: RunDetail }) {
                     </Notice>
                   </div>
                 )}
-                <p className="max-w-[75ch] whitespace-pre-wrap text-ink-2">{run.narrative}</p>
+                <p className="max-w-[75ch] whitespace-pre-wrap break-words text-ink-2">{run.narrative}</p>
                 <p className="mt-3 text-sm text-ink-3">Written by a language model. It never changes the verdict.</p>
               </Panel>
             </div>
@@ -240,7 +246,7 @@ function Report({ run }: { run: RunDetail }) {
                 {unresolved.length > 0 ? (
                   <ul className="space-y-2 text-sm text-ink-2">
                     {unresolved.slice(0, 30).map((u, i) => (
-                      <li key={i}>{u}</li>
+                      <li key={i} className="break-words">{u}</li>
                     ))}
                   </ul>
                 ) : (
@@ -253,7 +259,7 @@ function Report({ run }: { run: RunDetail }) {
                     </summary>
                     <ul className="mt-2 space-y-2 text-ink-3">
                       {setupGaps.map((u, i) => (
-                        <li key={i}>{u}</li>
+                        <li key={i} className="break-words">{u}</li>
                       ))}
                     </ul>
                   </details>
@@ -369,7 +375,7 @@ export function ReportPage() {
         <p className="mt-2 text-ink-2">
           Nothing was concluded about this file. The error below is what the pipeline reported.
         </p>
-        <pre className="data mt-4 whitespace-pre-wrap rounded-md bg-alarm-bg px-4 py-3 text-alarm">{run.error}</pre>
+        <pre className="data mt-4 whitespace-pre-wrap break-words rounded-md bg-alarm-bg px-4 py-3 text-alarm">{run.error}</pre>
         <Link to="/" className="mt-4 inline-block text-tool hover:underline">
           Screen another file
         </Link>
