@@ -6,6 +6,7 @@ from .contracts import AnalysisState, EgressPolicy, Provenance, StepBudget
 from .ingest import ingest, new_run_id
 from .models import ModelRouter, build_provider
 from .orchestrator import run as run_pipeline
+from .progress import progress_to
 from .reporter import build_verdict, render_html, render_markdown, render_txt, write_narrative
 from .store import get_repository
 
@@ -82,7 +83,8 @@ def analyze(path: str, *, provenance: Optional[Provenance] = None,
                           fusion_mode=fusion_mode)
     router = _maybe_router(state, audit, local_provider, local_model,
                            escalation_provider, escalation_model, enable_models)
-    state = run_pipeline(state, router=router, audit=audit, progress_cb=progress_cb)
+    with progress_to(progress_cb):
+        state = run_pipeline(state, router=router, audit=audit, progress_cb=progress_cb)
 
     if fusion_mode == "judge":
         adjudicate_state(state, _judge_provider(judge_model, state.policy), audit=audit)
