@@ -107,7 +107,15 @@ def build_user_prompt(rendered_text: str) -> str:
 
 def adjudicate(bundle: dict, provider, *, mode: str = "provenance", drop=frozenset(),
                order_seed: Optional[int] = None, temperature: float = 0.0, seed: int = 0,
-               max_tokens: int = 700, system_prompt: str = SYSTEM_PROMPT) -> JudgeResult:
+               max_tokens: int = 2048, system_prompt: str = SYSTEM_PROMPT) -> JudgeResult:
+    # 2048, not the original 700: a reasoning model (e.g. Gemini 3.1 Pro) bills
+    # its internal "thinking" tokens out of the same max_output_tokens budget
+    # as the visible answer. At 700, a sample needing more reasoning room
+    # truncated mid-JSON ("unparseable output") after only 18 visible tokens --
+    # real, observed on 2026-09-29 testing the first frontier-model arm.
+    # Raising the ceiling costs nothing extra (billing is by tokens actually
+    # produced, not the cap) and only prevents this truncation failure mode;
+    # local models that finish in <150 tokens are unaffected either way.
     rendered = render_evidence(bundle, mode=mode, drop=drop, order_seed=order_seed)
     res = JudgeResult(verdict="abstain", raw_verdict=None, confidence=0.0, mode=mode,
                       model=getattr(provider, "model", ""), provider=getattr(provider, "name", ""),

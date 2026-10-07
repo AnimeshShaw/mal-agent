@@ -195,10 +195,17 @@ McNemar's test for the paired comparison against EMBER-alone.
   already gives.
 - **EMBER2024 decides only PE files**; the "in-distribution" claim is
   therefore about PE specifically, not malware in general.
-- **Local models tested (qwen3:8b, gemma4:12b) are 7–12B quantized** —
-  the frontier-model arms (Claude/GPT/Gemini) need API keys this
-  environment doesn't have configured by default; the harness is ready,
-  the numbers aren't run here.
+- **Local models tested (qwen3:8b, gemma4:12b) are 7–12B quantized.**
+  One frontier model (Gemini 3.1 Pro, via its standard API) has now also
+  been run on the full 681-sample main experiment: Hybrid[Gemini] reaches
+  F1 0.837 at 0.8% FPR, the best F1 and by far the best FPR of the three
+  models — but on raw per-sample correctness, `qwen3:8b`'s Hybrid arm still
+  beats Gemini's (McNemar 68 vs. 45, p=0.038), driven by qwen3:8b's higher
+  coverage, not higher accuracy. The frontier model's own adversarial and
+  reliability numbers have **not** been run — that axis remains local-model
+  only, and is the most valuable next experiment this result points at.
+  Other frontier arms (Claude, GPT) still need API keys this environment
+  doesn't have configured by default.
 - **A real infrastructure incident is part of this project's own
   evidence for why reproducibility engineering matters**: an earlier run
   of this exact pipeline used 12 parallel workers, exhausted the
