@@ -70,6 +70,28 @@ export async function fetchReportUrl(runId: string, format: "txt" | "html" | "md
 }
 
 /**
+ * Returns a URL for the HTML report meant to be *navigated to* (window.open
+ * / location), not fetched into a blob. A blob: URL carries no HTTP headers,
+ * which was silently discarding the backend's Content-Security-Policy
+ * header -- a defense-in-depth backstop against an escaping bug in
+ * reporter._e, since this report embeds strings extracted straight out of
+ * the analyzed sample. Mints a short-lived, single-use, run-scoped ticket
+ * (same pattern as subscribeToProgress above) so a real navigation, which
+ * can't set a custom header, doesn't need the long-lived real token either.
+ */
+export async function reportHtmlUrl(runId: string): Promise<string> {
+  const t = token();
+  if (!t) return `${API}/analyses/${runId}/report.html`;
+  const resp = await fetch(`${API}/analyses/${runId}/report/ticket`, {
+    method: "POST",
+    headers: tokenHeaders(),
+  });
+  if (!resp.ok) throw new Error(`could not open the report (HTTP ${resp.status})`);
+  const { ticket } = await resp.json();
+  return `${API}/analyses/${runId}/report.html?ticket=${encodeURIComponent(ticket)}`;
+}
+
+/**
  * Live progress lines over SSE. EventSource can't send a custom header, so
  * when a token is configured this first exchanges it (via a normal,
  * header-authenticated POST) for a short-lived, single-use, run-scoped

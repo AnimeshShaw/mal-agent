@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowSquareOut, DownloadSimple, Spinner, Warning } from "@phosphor-icons/react";
-import { fetchReportUrl, getRun, subscribeToProgress } from "../lib/api";
+import { fetchReportUrl, getRun, reportHtmlUrl, subscribeToProgress } from "../lib/api";
 import type { RunDetail } from "../lib/types";
 import { FUSION, bytes, formatLabel, when } from "../lib/vocab";
 import { LaneStrip } from "../components/LaneStrip";
@@ -94,9 +94,15 @@ function LiveBelt({ run, lines }: { run: RunDetail; lines: string[] }) {
 }
 
 /**
- * Fetches the report with the real auth header and opens/downloads it as a
- * blob URL, so a bearer token never has to travel in a plain <a href>
- * (which can't set headers) or end up in browser history.
+ * Downloads use a fetched blob URL, so a bearer token never has to travel
+ * in a plain <a href> (which can't set headers) or end up in browser
+ * history. Opening the HTML report in a new tab deliberately does NOT use
+ * a blob URL -- see reportHtmlUrl in lib/api.ts: a blob: URL carries no
+ * HTTP headers, which was silently discarding the backend's
+ * Content-Security-Policy header on a report that embeds strings
+ * extracted straight out of the analyzed sample. That path navigates to
+ * a real server URL instead, so the CSP header is the one the browser
+ * actually enforces.
  */
 function ReportLink({
   run,
@@ -121,6 +127,10 @@ function ReportLink({
       onClick={async () => {
         setBusy(true);
         try {
+          if (openInNewTab && format === "html") {
+            window.open(await reportHtmlUrl(run.run_id), "_blank", "noopener,noreferrer");
+            return;
+          }
           const url = await fetchReportUrl(run.run_id, format);
           if (download) {
             const a = document.createElement("a");

@@ -72,7 +72,13 @@ def create_app(frontend_dist: Optional[Path] = None, *, store: Optional[runs.Run
             # or a proxy's access log. A ticket is single-use and run-scoped
             # (see tickets.py); it is checked by the route itself, not here.
             is_events = request.url.path.startswith("/api/analyses/") and request.url.path.endswith("/events")
-            if request.url.path.startswith("/api/") and request.url.path != "/api/health" and not is_events:
+            # report.html is opened via a direct browser navigation (see
+            # get_report_html below for why), which can't set a header
+            # either -- same ticket-based exemption as /events.
+            is_report_html = (request.url.path.startswith("/api/analyses/")
+                               and request.url.path.endswith("/report.html"))
+            if (request.url.path.startswith("/api/") and request.url.path != "/api/health"
+                    and not is_events and not is_report_html):
                 given = request.headers.get("x-mal-agent-token") or ""
                 if not hmac.compare_digest(given, token):
                     return JSONResponse({"detail": "missing or invalid token"}, status_code=401)
@@ -210,10 +216,29 @@ def create_app(frontend_dist: Optional[Path] = None, *, store: Optional[runs.Run
     def get_report_txt(run_id: str):
         return _completed_run_or_404(run_id).report_txt
 
+    @app.post("/api/analyses/{run_id}/report/ticket")
+    def mint_report_ticket(run_id: str):
+        """Same split as mint_event_ticket above, for the same reason: the
+        frontend opens report.html via a real browser navigation (window.open
+        to the URL itself, not a fetch+blob), so the server's
+        Content-Security-Policy header actually reaches the rendered
+        document -- a blob: URL carries no HTTP headers at all, which had
+        silently thrown away that CSP as a defense-in-depth backstop against
+        an escaping bug in reporter._e. A real navigation can't set a custom
+        header, so it carries this short-lived, single-use, run-scoped
+        ticket in the URL instead of the long-lived real token."""
+        if runs.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return {"ticket": tickets.mint(run_id), "expires_in": tickets.ttl_s}
+
     @app.get("/api/analyses/{run_id}/report.html", response_class=HTMLResponse)
-    def get_report_html(run_id: str):
+    def get_report_html(run_id: str, ticket: Optional[str] = None):
         # The HTML report escapes every sample-derived string (see
-        # reporter._e); serve it with a CSP that forbids scripts anyway.
+        # reporter._e); serve it with a CSP that forbids scripts anyway --
+        # and serve it from a real navigation (see mint_report_ticket above)
+        # so that CSP header is the one the browser actually enforces.
+        if token and not tickets.redeem(ticket or "", run_id):
+            raise HTTPException(status_code=401, detail="missing or invalid ticket")
         html = _completed_run_or_404(run_id).report_html
         return HTMLResponse(html, headers={"Content-Security-Policy":
                                            "default-src 'none'; style-src 'unsafe-inline'"})

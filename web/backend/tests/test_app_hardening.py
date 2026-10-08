@@ -35,11 +35,11 @@ def _fake_analyze(captured=None):
     return _fn
 
 
-def _wait(client, rid, status="complete"):
+def _wait(client, rid, status="complete", headers=None):
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        body = client.get(f"/api/analyses/{rid}").json()
-        if body["status"] in ("complete", "error"):
+        body = client.get(f"/api/analyses/{rid}", headers=headers or {}).json()
+        if body.get("status") in ("complete", "error"):
             return body
         time.sleep(0.02)
     raise AssertionError("run did not finish")
@@ -194,3 +194,39 @@ def test_query_string_token_no_longer_accepted_anywhere(fresh):
     history and access logs on every endpoint, not just SSE -- closed."""
     c = TestClient(create_app(token="s3cret"))
     assert c.get("/api/analyses?token=s3cret").status_code == 401
+
+
+def test_report_html_requires_a_valid_ticket_when_token_configured(fresh, monkeypatch):
+    """The frontend opens report.html via a real browser navigation (so the
+    response's CSP header -- a defense-in-depth backstop against an
+    escaping bug in reporter._e -- actually reaches the browser, unlike a
+    fetch+blob URL, which carries no HTTP headers at all). A real
+    navigation can't set a custom header, so it needs the same ticket split
+    as /events."""
+    monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze())
+    c = TestClient(create_app(token="s3cret"))
+    rid = c.post("/api/analyses", files={"file": ("a", b"MZ", "x")},
+                 headers={"X-Mal-Agent-Token": "s3cret"}).json()["run_id"]
+    _wait(c, rid, headers={"X-Mal-Agent-Token": "s3cret"})
+    # No ticket, and no header either (this is the endpoint a plain
+    # window.open navigation must be able to reach): rejected.
+    assert c.get(f"/api/analyses/{rid}/report.html").status_code == 401
+    ticket = c.post(f"/api/analyses/{rid}/report/ticket",
+                    headers={"X-Mal-Agent-Token": "s3cret"}).json()["ticket"]
+    r = c.get(f"/api/analyses/{rid}/report.html?ticket={ticket}")
+    assert r.status_code == 200
+    assert "default-src 'none'" in r.headers["content-security-policy"]
+    # single-use: the same ticket doesn't work twice
+    assert c.get(f"/api/analyses/{rid}/report.html?ticket={ticket}").status_code == 401
+
+
+def test_report_ticket_minting_itself_requires_the_real_token(fresh, monkeypatch):
+    """Minting a report ticket is itself a normal, header-authenticated
+    /api/ call -- only the GET it unlocks skips the header."""
+    monkeypatch.setattr("malagent.pipeline.analyze", _fake_analyze())
+    c = TestClient(create_app(token="s3cret"))
+    rid = c.post("/api/analyses", files={"file": ("a", b"MZ", "x")},
+                 headers={"X-Mal-Agent-Token": "s3cret"}).json()["run_id"]
+    assert c.post(f"/api/analyses/{rid}/report/ticket").status_code == 401
+    r = c.post(f"/api/analyses/{rid}/report/ticket", headers={"X-Mal-Agent-Token": "s3cret"})
+    assert r.status_code == 200 and "ticket" in r.json()
