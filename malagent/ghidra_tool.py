@@ -67,6 +67,11 @@ class GhidraTool:
     name = "ghidra"
 
     def run(self, state: AnalysisState) -> StageResult:
+        if state.sample.file_type not in ("PE", "ELF", "Mach-O"):
+            return StageResult(
+                stage="static", status="skipped",
+                notes=f"not a native executable (file type {state.sample.file_type!r}): "
+                      f"nothing to decompile")
         headless = find_headless_ghidra()
         if not headless:
             return StageResult(

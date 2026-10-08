@@ -1,3 +1,7 @@
+---
+title: The pipeline, tool by tool
+---
+
 # The pipeline, tool by tool
 
 What runs, in what order, and why each piece exists. Simple technical

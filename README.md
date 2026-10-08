@@ -7,6 +7,15 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-34d399.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-38bdf8.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/status-v0.1%20beta-f59e0b.svg" alt="Status: beta">
+  <a href="https://animeshshaw.github.io/mal-agent/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-8b5cf6.svg" alt="Docs"></a>
+  <a href="https://huggingface.co/datasets/AnimeshShaw/mal-agent-llm-adjudication-eval"><img src="https://img.shields.io/badge/dataset-HuggingFace-yellow.svg" alt="Dataset on Hugging Face"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/best%20F1-0.837-success.svg" alt="Best F1: 0.837">
+  <img src="https://img.shields.io/badge/best%20FPR-0.8%25-success.svg" alt="Best FPR: 0.8%">
+  <img src="https://img.shields.io/badge/eval%20samples-1%2C504-informational.svg" alt="1,504 evaluated samples">
+  <img src="https://img.shields.io/badge/adjudicators%20tested-3-informational.svg" alt="3 adjudicator models tested">
 </p>
 
 <p align="center">
@@ -82,9 +91,12 @@ configured but is broken, not merely absent.
 **One-command setup** (creates a venv, installs everything, scaffolds
 `.env`): `scripts/install.ps1` (Windows) or `scripts/install.sh`
 (Linux/macOS). A full-automation variant that also installs
-Ghidra/JDK/Ollama/Postgres: `scripts/install-full.ps1`/`.sh`. Full detail
-on both paths, plus a troubleshooting section built from real bugs hit
-during this project's own setup: **[docs/SETUP.md](docs/SETUP.md)**.
+Ghidra/JDK/Ollama/Postgres/EMBER model: `scripts/install-full.ps1`/`.sh`.
+Full detail on both paths, plus a troubleshooting section built from real
+bugs hit during this project's own setup: **[docs/SETUP.md](docs/SETUP.md)**.
+Every other script in `scripts/` (dataset construction, reproduction,
+one-off research runs) is catalogued in
+**[scripts/README.md](scripts/README.md)**.
 
 ### Web UI
 
@@ -130,7 +142,8 @@ mal-agent research ablate-llm dataset/manifest.csv
 ```
 
 Old flat forms (`mal-agent evaluate ...` without the `research` prefix)
-still work too, as undocumented-but-functional aliases.
+still work too, as undocumented-but-functional aliases. Full reference
+for every subcommand and flag: **[docs/CLI.md](docs/CLI.md)**.
 
 ## How it works
 
@@ -146,6 +159,45 @@ can never move the verdict score, the tool inventory, model routing and
 egress policy, the audit trail — is documented with diagrams in
 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**. Read that if you're
 evaluating or contributing to this project.
+
+## Results
+
+Main experiment, 681 held-out test samples, three adjudicator models
+(two local via Ollama, one frontier via API) under the same bounded
+routing policy — only classifier-uncertain cases are escalated to an LLM,
+and every LLM verdict must cite real tool evidence or it's overridden.
+Full numbers (per-format breakdowns, adversarial robustness, calibration,
+McNemar significance tests) are in
+**[docs/RESEARCH.md](docs/RESEARCH.md)**; the complete raw per-sample
+output behind every number here is deposited on
+[Hugging Face](https://huggingface.co/datasets/AnimeshShaw/mal-agent-llm-adjudication-eval)
+and Mendeley Data (DOI pending) — this table is the summary, not the
+whole story.
+
+| Arm | Precision | Recall | F1 | FPR | Coverage |
+|---|---|---|---|---|---|
+| EMBER2024 alone (PE, no LLM) | 0.983 | 0.338 | 0.503 | 1.9% | 32.5% |
+| Hybrid[qwen3:8b] (local) | 0.886 | 0.766 | 0.822 | 11.5% | **84.9%** |
+| Hybrid[gemma4:12b] (local) | 0.953 | 0.728 | 0.825 | 8.3% | 57.0% |
+| Hybrid[Gemini 3.1 Pro] (frontier) | **0.992** | **0.725** | **0.837** | **0.8%** | 74.4% |
+
+Headline findings, stated plainly:
+
+- **Bounding fixes a coverage collapse that hurts every model** — EMBER
+  alone commits on only 32.5% of samples; every Hybrid arm roughly
+  doubles or triples that while keeping precision above 0.88.
+- **The frontier model's own false-positive rate is already low without
+  bounding** (LLM-alone[Gemini] FPR = 0.8%, identical to its Hybrid FPR)
+  — the "letting an LLM judge everything inflates false positives"
+  problem this project's bounding exists to fix is real for 7–12B local
+  models (FPR would be 77–89% unbounded) and nearly absent for a frontier
+  model. Bounding still buys something for a frontier model (it's what
+  gates the other 25.6% of cases down to a 0% override rate), just not
+  the same thing it buys for a local one.
+- **No single model/metric dominates**: qwen3:8b's Hybrid arm beats
+  Gemini's on raw per-sample correctness (McNemar 68 vs. 45, p=0.038) —
+  driven by qwen3:8b committing on far more cases (84.9% vs. 74.4%
+  coverage), not by being more accurate per case it does commit on.
 
 ## Turn on more
 
@@ -203,19 +255,25 @@ evaluating or contributing to this project.
   silently reusing an existing one (see `docs/ARCHITECTURE.md` §7). Not
   live-verified — no API key was available in this project's own
   development.
-- **ML classifier decides the verdict (EMBER2024):** a real pretrained
-  LightGBM classifier (3.2M training files) that, when configured,
-  decides malicious/benign alone by default (`--fusion-mode=simple`) —
-  validated with perfect precision/recall/F1 on a genuinely held-out
-  57-sample set (zero overlap with the samples used to calibrate it).
-  The other eleven triage tools become evidence and explanation, not a
-  vote: every finding is annotated with what it indicates and whether it
-  supports or contradicts the verdict, and every tool is accounted for
-  in the report whether it ran, was skipped, or errored. The original
-  fusion design (Confidence-Gated Evidence Fusion, where the
-  deterministic gate votes in EMBER's gray zone) is preserved as an
-  opt-in mode (`--fusion-mode=cgef`) for ongoing research — see
-  `docs/ML_CLASSIFIER_PLAN.md` §10-11. `pip install thrember` from
+- **ML classifier decides the verdict, for PE files (EMBER2024):** a real
+  pretrained LightGBM classifier (3.2M training files) that, when
+  configured, decides malicious/benign alone by default
+  (`--fusion-mode=simple`) — but **only for PE files**: EMBER2024 is
+  PE-trained, and a real, measured check found 94/117 benign non-PE files
+  (documents, scripts, archives) scoring above the production threshold,
+  so a non-PE score is now shown as context and never decides (see
+  `docs/RESEARCH.md` §1). The other triage tools (now including
+  format-aware analysis of scripts, LNK shortcuts, Office/RTF documents
+  and PDFs — `malagent/format_triage.py`) become evidence and explanation:
+  every finding is annotated with what it indicates and whether it
+  supports or contradicts the verdict, and every tool is accounted for in
+  the report whether it ran, was skipped, or errored. Two research
+  fusion modes are preserved as opt-in: `--fusion-mode=cgef` (the
+  deterministic gate votes in EMBER's gray zone) and `--fusion-mode=judge`
+  (an LLM adjudicator, `--judge-model provider:model`, decides only
+  routed hard cases and must cite tool evidence — see `docs/RESEARCH.md`
+  for the full design and how to reproduce its evaluation). `pip install
+  thrember` from
   [FutureComputing4AI/EMBER2024](https://github.com/FutureComputing4AI/EMBER2024)
   (Apache-2.0) **and** `pip install "signify==0.7.1"` specifically —
   `thrember` pins `signify>=0.7.1` with no upper bound, and the latest
@@ -223,8 +281,8 @@ evaluating or contributing to this project.
   live during setup). Download a `.model` file from
   [huggingface.co/joyce8/EMBER2024-benchmark-models](https://huggingface.co/joyce8/EMBER2024-benchmark-models)
   (~3.5MB, no need to download the full 3.2M-file dataset), set
-  `EMBER_MODEL_PATH`. See `docs/ML_CLASSIFIER_PLAN.md` for the full
-  reasoning, real calibration numbers, and honest caveats.
+  `EMBER_MODEL_PATH`. See `docs/RESEARCH.md` for the full reasoning,
+  current numbers, and honest caveats.
 - **Per-function decompilation + call-graph tracing** between decompiled
   functions: `pip install -e ".[ghidra]"` (pyghidra),
   install Ghidra itself, and set `GHIDRA_HOME` to the install root. Ghidra
@@ -232,8 +290,10 @@ evaluating or contributing to this project.
   drives Ghidra's Java API directly from this process instead.
 - **LLM reasoning agents:** `pip install -e ".[providers]"`, set keys in
   `.env`, add `--enable-models` (and `--no-cloud` to stay local-only).
-  Local: install [Ollama](https://ollama.com),
-  `ollama pull qwen2.5-coder:7b`.
+  Local: install [Ollama](https://ollama.com), then `ollama pull qwen3:8b`
+  and/or `ollama pull gemma4:12b` — the two local models this project's own
+  research actually evaluated (see [Results](#results) below); either
+  works with `--judge-model ollama:<model>`.
 - **Postgres** (optional — in-memory repository is the supported
   default): `docker compose up -d db`, set `DATABASE_URL` (host port
   **5433**, not 5432 — see the comment in `docker-compose.yml` for why).
@@ -284,12 +344,13 @@ round-tripping a real run's verdict.
 ## Testing
 
 ```bash
-pip install pytest && pytest -q
+pip install pytest && pytest -q          # core suite
+pytest -q web/backend                    # web UI backend
 ```
 
-400+ tests, TDD throughout — every feature was built failing-test-first.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow this project
-expects contributions to follow.
+663 tests across both suites, TDD throughout — every feature was built
+failing-test-first. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+workflow this project expects contributions to follow.
 
 ## Roadmap
 
@@ -297,26 +358,36 @@ M0 deterministic spine → M1 local model summaries → M2 headless-Ghidra
 decompilation → M3 cloud escalation + egress enforcement → M4 ATT&CK +
 YARA + retrieval-grounded narrative → M4.5 LLM reasoning agents
 (behavioral narrative + fact-checking critic) → mandatory unabridged
-`.txt` reporting → `doctor` + install automation — all shipped and
-verified live. M5 (dynamic detonation) is stubbed by design (v1 is
-static-only). M6 (calibration against labeled malware/benign datasets)
-has real infrastructure and numbers now — see `docs/TODO.md` for the
-current state of each sub-item (family-attribution macro-F1, deterministic
-calibration bands, adversarial robustness, ablation studies). A pretrained
-ML classifier (EMBER2024) decides the verdict alone by default
-(`--fusion-mode=simple`) — a genuinely held-out, non-overlapping 57-sample
-evaluation validated perfect precision/recall/F1, versus 61% undetermined
-and real false positives from the old deterministic-gate-alone approach.
-The original fusion design (Confidence-Gated Evidence Fusion, where the
-gate votes in EMBER's gray zone) is preserved as an opt-in research mode
-(`--fusion-mode=cgef`) — see `docs/ML_CLASSIFIER_PLAN.md` §10-11 for the
-full numbers and the decision.
+`.txt` reporting → `doctor` + install automation → format-aware triage
+for non-PE lures (scripts/LNK/Office/PDF) → a redesigned local web UI —
+all shipped and verified live. M5 (dynamic detonation) is stubbed by
+design (v1 is static-only). The current research question — whether a
+bounded, evidence-gated LLM adjudicator improves on EMBER2024 alone for
+the specific cases it's genuinely unsure about — has a full
+bundle/routing/adjudication architecture, a 1,504-sample dataset spanning
+15+ file formats, and a reproducible experiment harness
+(`mal-agent research build-bundles|judge-run|judge-claims|judge-report`);
+see [docs/RESEARCH.md](docs/RESEARCH.md) for the design, how to reproduce
+it, and the honestly-stated limitations (including a real evaluation-
+validity bug this project found and fixed in its own earlier numbers: a
+benign-set/known-good-allowlist overlap had made several previously
+reported precision/recall/F1 figures artifacts of a hash lookup, not
+analysis).
 
 ## Documentation
 
 Full index: [docs/README.md](docs/README.md). Highlights:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how it works),
 [docs/SETUP.md](docs/SETUP.md) (install).
+
+## Citing this work
+
+If you use this software, cite it via [CITATION.cff](CITATION.cff) (GitHub's
+"Cite this repository" button reads this file automatically) or the Zenodo
+DOI once a release is archived there. If you use the accompanying research
+(dataset v2, the evidence-bundle/routing/adjudication architecture, or any
+reported evaluation numbers), see [docs/RESEARCH.md](docs/RESEARCH.md) and
+[paper/](paper/) for the paper to cite once it's public.
 
 ## Contributing
 

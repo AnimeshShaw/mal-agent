@@ -3,9 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="mal-agent: local, evidence-first static malware triage" />
     <title>mal-agent</title>
+    <script>
+      // Resolve the theme before first paint (no flash): stored choice, else the OS.
+      try {
+        var t = localStorage.getItem("malagent.theme");
+        var dark = t === "dark" || (t !== "light" && !matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      } catch (e) {}
+    </script>
   </head>
   <body>
+    <!--
+      THESIS: A screening console, not a verdict badge over a grid of tool cards: every file passes
+      primary screening (the classifier) and only flagged hard cases go to secondary inspection
+      (the LLM adjudicator), with the lane each file took shown as the page's spine.
+      OWN-WORLD: Baggage X-ray false colour as semantics on a deep console ground (light: printed
+      screening slip). Blue = tool fact, orange = attacker-controlled sample text, green = cleared,
+      red = flagged, amber = secondary inspection. Barlow signage letterforms; mono for data only.
+      STORY: The analyst sees where the file went and why, what decided it, and can trace every
+      finding to the tool evidence behind it, never mistaking the file's own words for proof.
+      FIRST VIEWPORT: Header with file identity, then the lane strip: primary score on its calibrated
+      scale, route, secondary ruling, verdict. Intake: drop zone and "who decides" choice.
+      FORM: X-ray baggage screening station with secondary inspection, position 7, seed b14c41a8.
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -1,94 +1,156 @@
-"""FastAPI app for mal-agent's local web UI (docs/TODO.md Phase 8). Thin:
-imports and calls malagent.pipeline.analyze()/reporter render functions
-directly -- no analysis logic duplicated here. Runs each analysis in a
-background thread (see runs.py) so POST /api/analyses returns immediately
-instead of blocking on a Ghidra-backed run that can take minutes."""
+"""FastAPI app for mal-agent's local web UI. Thin: calls
+malagent.pipeline.analyze() and the reporter/bundle code directly, no
+analysis logic duplicated here.
+
+Security posture (a malware-analysis service is a juicy target):
+  - uploads are streamed to disk under a size cap, stored as a neutral
+    'upload.bin' (never the client's name/extension), and deleted once
+    ingest has copied the sample into quarantine;
+  - analysing an arbitrary *server-side path* is allowed only when the app
+    is bound to loopback (or explicitly enabled);
+  - binding to a non-loopback host requires an API token (MAL_AGENT_WEB_TOKEN),
+    checked on every /api request;
+  - fusion_mode and judge_model are validated; cloud judges honour the
+    egress policy exactly as the CLI does.
+"""
 from __future__ import annotations
 import asyncio
+import hmac
 import os
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Optional
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse, PlainTextResponse,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 
 from . import runs
+from .payload import build_detail
+from .tickets import TicketStore
 
-# web/frontend/dist, built via `npm run build` in web/frontend/ -- not
-# committed (gitignored, like any build output). Serving it from the same
-# process as the API means `mal-agent web` is one command/one port, not
-# two separate dev servers to run in production.
 _DEFAULT_FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-
-# How often the SSE generator checks for new progress lines. Plain polling
-# of an in-process list, not a real queue/condition-variable wakeup -- the
-# simplest thing that works for a single-operator local tool; 200ms is
-# imperceptible for a human watching a multi-second-to-multi-minute run.
 _SSE_POLL_INTERVAL_S = 0.2
-
-# malagent.pipeline.analyze() persists every run via malagent.store.get_repository(),
-# which reads DATABASE_URL: unset -> in-memory (doesn't survive past a single
-# call), sqlite:/// -> local file, otherwise -> Postgres. The web UI runs many
-# analyses across the lifetime of one server process and a user reasonably
-# expects past runs to still be there after a page reload, so it defaults to a
-# local SQLite file (not Postgres -- no server process required) unless the
-# operator has already set DATABASE_URL themselves.
 _DEFAULT_DB_PATH = "malagent_web.db"
+_FUSION_MODES = ("simple", "cgef", "judge")
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+_UPLOAD_CHUNK = 1 << 20
 
 
 def ensure_default_database_url() -> None:
-    """Deliberately NOT called by create_app() itself: mutating the real
-    process environment as a side effect of merely constructing (or
-    testing) the app object caused a real bug during development -- the
-    module-level `app = create_app()` below runs at import time, so an
-    env mutation inside create_app() fired the moment pytest collected
-    this module, before any test or fixture ran, leaking DATABASE_URL
-    (and creating a stray malagent_web.db in the repo root) for the rest
-    of the test session regardless of any test-level cleanup. This is a
-    server-startup concern only -- see run() below."""
+    """Server-startup concern only, deliberately NOT called by create_app():
+    mutating the process environment at import/construct time leaked
+    DATABASE_URL into the whole test session once."""
     os.environ.setdefault("DATABASE_URL", f"sqlite:///{_DEFAULT_DB_PATH}")
 
 
-def create_app(frontend_dist: Optional[Path] = None) -> FastAPI:
+def _judge_models() -> list[str]:
+    env = os.getenv("MAL_AGENT_JUDGE_MODELS")
+    if env:
+        return [m.strip() for m in env.split(",") if m.strip()]
+    return ["ollama:qwen3:8b", "ollama:gemma4:12b"]
+
+
+def create_app(frontend_dist: Optional[Path] = None, *, store: Optional[runs.RunStore] = None,
+               allow_server_paths: bool = True, token: Optional[str] = None,
+               max_upload_mb: int = 200) -> FastAPI:
     app = FastAPI(title="mal-agent web")
     frontend_dist = frontend_dist or _DEFAULT_FRONTEND_DIST
+    runs.set_store(store)
+    max_bytes = max_upload_mb * 1024 * 1024
+
+    tickets = TicketStore()
+
+    if token:
+        @app.middleware("http")
+        async def _require_token(request: Request, call_next):
+            # EventSource cannot set a custom header, and this endpoint is the
+            # only one a browser can reach without one -- everywhere else
+            # (including minting a ticket) needs the real header token, so a
+            # long-lived secret never has to travel in a URL, browser history,
+            # or a proxy's access log. A ticket is single-use and run-scoped
+            # (see tickets.py); it is checked by the route itself, not here.
+            is_events = request.url.path.startswith("/api/analyses/") and request.url.path.endswith("/events")
+            if request.url.path.startswith("/api/") and request.url.path != "/api/health" and not is_events:
+                given = request.headers.get("x-mal-agent-token") or ""
+                if not hmac.compare_digest(given, token):
+                    return JSONResponse({"detail": "missing or invalid token"}, status_code=401)
+            return await call_next(request)
 
     @app.get("/api/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/api/config")
+    def config():
+        return {"fusion_modes": list(_FUSION_MODES), "judge_models": _judge_models(),
+                "allow_server_paths": allow_server_paths, "max_upload_mb": max_upload_mb,
+                "workers": runs._MAX_WORKERS}
+
+    @app.get("/api/analyses")
+    def list_analyses(limit: int = 100):
+        return {"runs": runs.list_runs(limit=max(1, min(limit, 500)))}
 
     @app.post("/api/analyses")
     async def create_analysis(
         path: Optional[str] = Form(default=None),
         file: Optional[UploadFile] = None,
         fusion_mode: str = Form(default="simple"),
+        judge_model: Optional[str] = Form(default=None),
         enable_models: bool = Form(default=False),
-        no_cloud: bool = Form(default=False),
+        no_cloud: bool = Form(default=True),
     ):
+        if fusion_mode not in _FUSION_MODES:
+            raise HTTPException(status_code=400, detail=f"fusion_mode must be one of {_FUSION_MODES}")
+        if judge_model:
+            from malagent.judge.providers import parse_spec
+            try:
+                parse_spec(judge_model)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        cleanup_dir, filename = None, None
         if file is not None and file.filename:
-            # file.filename is client-supplied and untrusted -- take only
-            # its final path component (Path.name strips any leading
-            # directory segments/drive letters) so a crafted name like
-            # "../../etc/passwd" or an absolute path can't escape dest_dir
-            # or overwrite an arbitrary file elsewhere on disk.
-            safe_name = Path(file.filename).name or "upload.bin"
-            dest_dir = Path(mkdtemp(prefix="malagent_web_"))
-            target = dest_dir / safe_name
-            target.write_bytes(await file.read())
+            # The client's filename is untrusted: keep only its basename, as
+            # display metadata. The bytes land under a neutral name so a
+            # sample is never written to disk with an executable extension.
+            filename = Path(file.filename).name or "upload.bin"
+            # Staged next to the quarantine rather than in the OS temp dir: an
+            # analyst machine's antivirus typically has an exclusion for the
+            # analysis workspace but will silently quarantine a live sample the
+            # moment it lands in %TEMP% (seen live: a malicious .js upload
+            # vanished between write and read, surfacing as OSError 22).
+            incoming = Path(os.getenv("MAL_AGENT_UPLOAD_DIR", "quarantine/incoming"))
+            incoming.mkdir(parents=True, exist_ok=True)
+            cleanup_dir = mkdtemp(prefix="upload_", dir=str(incoming))
+            target = Path(cleanup_dir) / "upload.bin"
+            size = 0
+            with open(target, "wb") as fh:
+                while chunk := await file.read(_UPLOAD_CHUNK):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        fh.close()
+                        import shutil
+                        shutil.rmtree(cleanup_dir, ignore_errors=True)
+                        raise HTTPException(status_code=413,
+                                            detail=f"upload exceeds {max_upload_mb} MB")
+                    fh.write(chunk)
             target_path = str(target)
         elif path:
-            if not Path(path).exists():
+            if not allow_server_paths:
+                raise HTTPException(status_code=403,
+                                    detail="server-side paths are disabled on this deployment")
+            if not Path(path).is_file():
                 raise HTTPException(status_code=400, detail=f"{path} not found")
-            target_path = path
+            target_path, filename = path, Path(path).name
         else:
             raise HTTPException(status_code=400, detail="either 'path' or 'file' is required")
 
         from malagent.contracts import EgressPolicy
-        policy = EgressPolicy(allow_cloud=not no_cloud)
-        run = runs.start_run(target_path, fusion_mode=fusion_mode,
-                             enable_models=enable_models, policy=policy)
+        run = runs.start_run(target_path, filename=filename, detail_fn=build_detail,
+                             cleanup_dir=cleanup_dir, fusion_mode=fusion_mode,
+                             judge_model=judge_model or None, enable_models=enable_models,
+                             policy=EgressPolicy(allow_cloud=not no_cloud))
         return {"run_id": run.run_id, "status": run.status}
 
     @app.get("/api/analyses/{run_id}")
@@ -96,26 +158,33 @@ def create_app(frontend_dist: Optional[Path] = None) -> FastAPI:
         run = runs.get_run(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
-        result = {"run_id": run.run_id, "status": run.status}
+        result = run.summary()
         if run.status == "error":
             result["error"] = run.error
-        if run.status == "complete" and run.verdict is not None:
-            from malagent.reporter import build_tool_report, fusion_mode_label
-
-            result["verdict"] = run.verdict.model_dump(mode="json")
-            result["fusion_mode_label"] = fusion_mode_label(run.state)
-            result["tools"] = build_tool_report(run.state)
-            narrative_finding = next(
-                (f for f in run.state.findings
-                 if f.source_stage == "behavioral_analyst" and f.grounded), None)
-            result["narrative"] = narrative_finding.claim if narrative_finding else None
+        if run.status == "complete":
+            detail = run.detail
+            if detail is None and run.state is not None:  # detail_fn not supplied
+                detail = build_detail(run.state, run.verdict)
+            result.update(detail or {})
+            result["progress"] = run.progress[-400:]
         return result
 
+    @app.post("/api/analyses/{run_id}/events/ticket")
+    def mint_event_ticket(run_id: str):
+        """Exchanges the real (header-authenticated) token for a short-lived,
+        single-use, run-scoped ticket the browser's EventSource can carry in
+        its URL instead -- see tickets.py for why that split matters."""
+        if runs.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return {"ticket": tickets.mint(run_id), "expires_in": tickets.ttl_s}
+
     @app.get("/api/analyses/{run_id}/events")
-    async def get_events(run_id: str):
+    async def get_events(run_id: str, ticket: Optional[str] = None):
         run = runs.get_run(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
+        if token and not tickets.redeem(ticket or "", run_id):
+            raise HTTPException(status_code=401, detail="missing or invalid ticket")
 
         async def _stream():
             sent = 0
@@ -131,40 +200,34 @@ def create_app(frontend_dist: Optional[Path] = None) -> FastAPI:
 
         return StreamingResponse(_stream(), media_type="text/event-stream")
 
-    @app.get("/api/analyses/{run_id}/report.txt", response_class=PlainTextResponse)
-    def get_report_txt(run_id: str):
-        run = _completed_run_or_404(run_id)
-        return run.report_txt
-
-    @app.get("/api/analyses/{run_id}/report.html", response_class=HTMLResponse)
-    def get_report_html(run_id: str):
-        run = _completed_run_or_404(run_id)
-        return run.report_html
-
-    @app.get("/api/analyses/{run_id}/report.md", response_class=PlainTextResponse)
-    def get_report_md(run_id: str):
-        run = _completed_run_or_404(run_id)
-        return run.report_md
-
     def _completed_run_or_404(run_id: str) -> runs.Run:
         run = runs.get_run(run_id)
         if run is None or run.status != "complete":
             raise HTTPException(status_code=404, detail="report not ready")
         return run
 
-    # Serve the built frontend, when present, from the same process/port as
-    # the API. Registered last so the specific /api/* routes above always
-    # win; the catch-all below only ever matches what nothing else did.
+    @app.get("/api/analyses/{run_id}/report.txt", response_class=PlainTextResponse)
+    def get_report_txt(run_id: str):
+        return _completed_run_or_404(run_id).report_txt
+
+    @app.get("/api/analyses/{run_id}/report.html", response_class=HTMLResponse)
+    def get_report_html(run_id: str):
+        # The HTML report escapes every sample-derived string (see
+        # reporter._e); serve it with a CSP that forbids scripts anyway.
+        html = _completed_run_or_404(run_id).report_html
+        return HTMLResponse(html, headers={"Content-Security-Policy":
+                                           "default-src 'none'; style-src 'unsafe-inline'"})
+
+    @app.get("/api/analyses/{run_id}/report.md", response_class=PlainTextResponse)
+    def get_report_md(run_id: str):
+        return _completed_run_or_404(run_id).report_md
+
     assets_dir = frontend_dist / "assets"
     if frontend_dist.is_dir() and assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
 
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str):
-            # A client-side route (react-router) reloaded directly, e.g.
-            # /report/<uuid> -- there's no file at that path, serve the SPA
-            # shell and let the frontend router take it from there. An
-            # unmatched /api/* path is a real 404, not a routing fallback.
             if full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="not found")
             index = frontend_dist / "index.html"
@@ -180,5 +243,15 @@ app = create_app()
 
 def run(host: str = "127.0.0.1", port: int = 8765) -> None:
     ensure_default_database_url()
+    token = os.getenv("MAL_AGENT_WEB_TOKEN") or None
+    loopback = host in _LOOPBACK
+    if not loopback and not token:
+        raise SystemExit("refusing to bind mal-agent web to a non-loopback address without an "
+                         "API token: set MAL_AGENT_WEB_TOKEN (clients send it as the "
+                         "X-Mal-Agent-Token header).")
+    allow_paths = loopback or os.getenv("MAL_AGENT_WEB_ALLOW_SERVER_PATHS") == "1"
+    store = runs.RunStore(os.getenv("MAL_AGENT_WEB_DB", _DEFAULT_DB_PATH))
     import uvicorn
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(create_app(store=store, allow_server_paths=allow_paths, token=token,
+                           max_upload_mb=int(os.getenv("MAL_AGENT_MAX_UPLOAD_MB", "200"))),
+                host=host, port=port)

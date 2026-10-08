@@ -33,7 +33,7 @@ class ModelProvider(Protocol):
 # ---- providers (SDKs imported lazily so missing packages don't break import) ----
 class OllamaProvider:
     location = "local"
-    def __init__(self, model: str = "qwen2.5-coder:7b", base_url: Optional[str] = None):
+    def __init__(self, model: str = "qwen3:8b", base_url: Optional[str] = None):
         self.name = "ollama"; self.model = model
         self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     def complete(self, system: str, prompt: str) -> str:

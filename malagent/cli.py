@@ -8,7 +8,8 @@ from .pipeline import analyze
 
 
 _RESEARCH_CMDS = {"evaluate", "make-manifest", "suggest-verdict",
-                  "ablate-critic", "family-attribution", "ablate-llm"}
+                  "ablate-critic", "family-attribution", "ablate-llm",
+                  "build-bundles", "judge-run", "judge-report", "judge-claims"}
 
 
 def main(argv=None):
@@ -34,6 +35,10 @@ def main(argv=None):
         argv = argv[1:]
     elif argv and argv[0] == "analyze":
         argv = argv[1:]
+
+    if argv and argv[0] in ("build-bundles", "judge-run", "judge-report", "judge-claims"):
+        from .judge.cli import main as judge_main
+        return judge_main(argv)
 
     if argv and argv[0] == "doctor":
         from .doctor import exit_code, format_report, run_checks
@@ -63,14 +68,17 @@ def main(argv=None):
         ep.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
         ep.add_argument("--enable-models", action="store_true")
         ep.add_argument("--no-cloud", action="store_true")
-        ep.add_argument("--local-model", default="qwen2.5-coder:7b",
-                        help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
+        ep.add_argument("--local-model", default="qwen3:8b",
+                        help="Ollama model tag to use locally (default: qwen3:8b)")
         ep.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
         ep.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef"],
                         help="verdict decision method when EMBER is configured "
                              "(see docs/ML_CLASSIFIER_PLAN.md S10/S11)")
         ep.add_argument("--out", default=None, help="also write the report text to this path")
+        ep.add_argument("--with-known-good", action="store_true",
+                        help="keep KNOWN_GOOD_HASHES_PATH active (off by default: an "
+                             "allowlist containing the benign set makes TN a hash lookup)")
         eargs = ep.parse_args(argv[1:])
 
         if not Path(eargs.manifest).exists():
@@ -82,7 +90,8 @@ def main(argv=None):
         report = evaluation.evaluate(samples, enable_models=eargs.enable_models, policy=policy,
                                      local_model=eargs.local_model,
                                      escalation_provider=eargs.escalation_provider,
-                                     fusion_mode=eargs.fusion_mode)
+                                     fusion_mode=eargs.fusion_mode,
+                                     with_known_good=eargs.with_known_good)
         text = evaluation.format_report(report)
         print(text)
         if eargs.out:
@@ -123,9 +132,9 @@ def main(argv=None):
                                                  "to influence the real verdict")
         vp.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
         vp.add_argument("--no-cloud", action="store_true")
-        vp.add_argument("--local-model", default="qwen2.5-coder:7b",
+        vp.add_argument("--local-model", default="qwen3:8b",
                         help="Ollama model tag to ask for the verdict suggestion "
-                             "(default: qwen2.5-coder:7b)")
+                             "(default: qwen3:8b)")
         vp.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
         vp.add_argument("--out", default=None, help="also write the report text to this path")
@@ -166,8 +175,8 @@ def main(argv=None):
                         help="without this, no model is configured and every case is "
                              "conservatively flagged as unverified (honest, but degenerate)")
         ap.add_argument("--no-cloud", action="store_true")
-        ap.add_argument("--local-model", default="qwen2.5-coder:7b",
-                       help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
+        ap.add_argument("--local-model", default="qwen3:8b",
+                       help="Ollama model tag to use locally (default: qwen3:8b)")
         ap.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
         ap.add_argument("--out", default=None, help="also write the report text to this path")
@@ -249,9 +258,9 @@ def main(argv=None):
                                                  "(it should not -- LLMs narrate, never judge)")
         lp.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
         lp.add_argument("--no-cloud", action="store_true")
-        lp.add_argument("--local-model", default="qwen2.5-coder:7b",
+        lp.add_argument("--local-model", default="qwen3:8b",
                         help="Ollama model tag to use for the +LLM condition "
-                             "(default: qwen2.5-coder:7b)")
+                             "(default: qwen3:8b)")
         lp.add_argument("--escalation-provider", default=None,
                         choices=[None, "openai", "anthropic", "gemini", "xai"],
                         help="cloud escalation provider for the +LLM condition "
@@ -275,7 +284,21 @@ def main(argv=None):
             print(f"[out] wrote {largs.out}")
         return 0
 
-    p = argparse.ArgumentParser(prog="mal-agent", description="Evidence-grounded static malware analysis")
+    p = argparse.ArgumentParser(
+        prog="mal-agent", description="Evidence-grounded static malware analysis",
+        epilog="Other commands:\n"
+               "  mal-agent doctor                    check this machine's tool/model setup\n"
+               "  mal-agent web                        launch the local web UI\n"
+               "  mal-agent evaluate <manifest.csv>    score verdicts against labeled samples\n"
+               "  mal-agent make-manifest <dir>        build a manifest.csv from <dir>/{benign,malicious}\n"
+               "  mal-agent research <subcommand>      dataset/experiment tooling for the paper\n"
+               "                                        (build-bundles, judge-run, judge-report,\n"
+               "                                        judge-claims, ablate-critic, ablate-llm,\n"
+               "                                        family-attribution, suggest-verdict)\n"
+               "Run any of the above with --help for its own options. See docs/RESEARCH.md for\n"
+               "the research subcommands and docs/SETUP.md for install/config.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("path", help="path to the sample")
     p.add_argument("--source", default="manual", choices=["soc", "cdc", "manual", "dataset"])
     p.add_argument("--ticket", default=None)
@@ -283,16 +306,19 @@ def main(argv=None):
                    help="enable local/cloud model stage (needs Ollama or API keys)")
     p.add_argument("--no-cloud", action="store_true", help="disable cloud escalation (local only)")
     p.add_argument("--allow-pseudocode-egress", action="store_true")
-    p.add_argument("--local-model", default="qwen2.5-coder:7b",
-                   help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
+    p.add_argument("--local-model", default="qwen3:8b",
+                   help="Ollama model tag to use locally (default: qwen3:8b)")
     p.add_argument("--escalation-provider", default="anthropic",
                    choices=["openai", "anthropic", "gemini", "xai"])
-    p.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef"],
-                   help="verdict decision method when EMBER is configured: 'simple' "
-                        "(default) lets the EMBER classifier alone decide malicious/"
-                        "benign; 'cgef' opts into the deterministic corroboration "
-                        "gate voting in the gray zone (see docs/ML_CLASSIFIER_PLAN.md "
-                        "S10/S11)")
+    p.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef", "judge"],
+                   help="verdict decision method: 'simple' (default) lets the EMBER "
+                        "classifier alone decide PE files; 'cgef' lets the deterministic "
+                        "corroboration gate vote in EMBER's gray zone; 'judge' (opt-in) sends "
+                        "only routed hard cases (non-PE, gray zone, EMBER-vs-evidence "
+                        "conflict) to an LLM adjudicator (see docs/RESEARCH.md)")
+    p.add_argument("--judge-model", default=None,
+                   help="adjudicator for --fusion-mode judge, '<provider>:<model>', e.g. "
+                        "ollama:qwen3:8b or anthropic:claude-opus-5-5 (cloud needs egress)")
     p.add_argument("--out", default="./mal-agent-reports",
                    help="dir to write report.md + verdict.json + the mandatory report.txt "
                         "(default: ./mal-agent-reports; always written, files are namespaced "
@@ -310,7 +336,7 @@ def main(argv=None):
     state, verdict, report_md, report_txt, report_html, audit = analyze(
         args.path, provenance=prov, policy=policy, enable_models=args.enable_models,
         local_model=args.local_model, escalation_provider=args.escalation_provider,
-        fusion_mode=args.fusion_mode)
+        fusion_mode=args.fusion_mode, judge_model=args.judge_model)
 
     print(report_md)
     print(f"\n[audit] chain intact: {audit.verify()}  records: {len(audit.records)}")

@@ -44,7 +44,10 @@ class EvidenceRecord(BaseModel):
     artifact_id: str
     locator: str                    # "function@0x401000", "rule:CreateRemoteThread"
     excerpt: Optional[str] = None   # short, sanitized
-    trust: Literal["tool", "model"] = "tool"
+    # "sample": the excerpt is text copied verbatim out of the sample itself
+    # (script body, macro source, LNK command line) -- attacker-controlled,
+    # so it may be shown to a model but never counted as tool-derived support.
+    trust: Literal["tool", "model", "sample"] = "tool"
 
 
 class Finding(BaseModel):
@@ -151,7 +154,11 @@ class AnalysisState(BaseModel):
     # Evidence Fusion mode (S10) -- kept as an opt-in research path, not
     # deleted, since it's still the mechanism to revisit for the "does fusion
     # ever correct a wrong EMBER call" question.
-    fusion_mode: Literal["simple", "cgef"] = "simple"
+    # "judge" (opt-in, research): as "simple", except hard cases routed by
+    # malagent.judge.routing take a validated LLM adjudication.
+    fusion_mode: Literal["simple", "cgef", "judge"] = "simple"
+    # fusion_mode="judge" only: {"routed", "reasons", "result" (JudgeResult dict or None)}
+    adjudication: Optional[dict] = None
 
 
 class Verdict(BaseModel):

@@ -1,3 +1,7 @@
+---
+title: MAL-AGENT Setup Guide
+---
+
 # MAL-AGENT Setup Guide
 
 Two install paths. Both start the same way; the full-automation path adds
@@ -38,9 +42,10 @@ Leaves Ghidra/capa-rules/Ollama/Postgres for you to install manually — see
 
 Runs Path A, then downloads/installs a JDK, Ghidra, capa-rules + FLIRT
 sigs (version-matched to the capa version just installed), Ollama +
-`qwen2.5-coder:7b`, and brings up Postgres via `docker compose`. Prompts
-before each large download; pass `-Yes` (PowerShell) / `--yes` (bash) for
-unattended/CI use.
+both local models this project's own research evaluated (`qwen3:8b` and
+`gemma4:12b` — see docs/RESEARCH.md), the EMBER2024 PE classifier model,
+and brings up Postgres via `docker compose`. Prompts before each large
+download; pass `-Yes` (PowerShell) / `--yes` (bash) for unattended/CI use.
 
 **The Linux/macOS variant has not been run on a real Linux or macOS
 machine** — this project's entire live-verification history is Windows.
@@ -89,7 +94,8 @@ subprocess+script approach).
 ```bash
 # Windows: winget install Ollama.Ollama
 # Linux/macOS: curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5-coder:7b
+ollama pull qwen3:8b     # best coverage of the two models this project evaluated
+ollama pull gemma4:12b   # best local FPR of the two
 ```
 
 ### die / Detect It Easy (optional — packer/compiler identification)

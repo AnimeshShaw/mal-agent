@@ -1,34 +1,187 @@
 @import "tailwindcss";
 
-/* Design tokens (docs/TODO.md Phase 8 / PRODUCT.md "Operate mode: scanability
-   and correctness outrank visual flourish"). Restrained color strategy:
-   neutrals (zinc) plus one UI accent, with a separate, fixed verdict/status
-   palette carried over verbatim from the existing CLI-generated report.html
-   (malagent/reporter.py's _VERDICT_COLORS/_STATUS_COLORS) so a verdict reads
-   identically whether an analyst is looking at the web UI or an archived
-   .html report. */
+/* Screening-console world. Colour is semantic, borrowed from baggage X-ray
+   false-colour: dense blue = tool-derived fact, organic orange = text copied
+   out of the sample (attacker-controlled), green = cleared / supports benign,
+   alarm red = flagged / supports malicious, amber = secondary inspection.
+   Dark console is the default scene (analyst at a monitor next to a
+   disassembler); light is the printed screening slip. */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
-  --color-accent: #2563eb; /* single UI accent: links, focus rings, primary actions -- not used for verdict semantics */
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-sign: "Barlow Condensed", "Barlow", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-verdict-malicious: #c0392b;
-  --color-verdict-suspicious: #d68910;
-  --color-verdict-benign: #1e8449;
-  --color-verdict-undetermined: #5d6d7e;
+  --color-ground: var(--ground);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-rule: var(--rule);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-tool: var(--tool);
+  --color-tool-bg: var(--tool-bg);
+  --color-sample: var(--sample);
+  --color-sample-bg: var(--sample-bg);
+  --color-clear: var(--clear);
+  --color-clear-bg: var(--clear-bg);
+  --color-alarm: var(--alarm);
+  --color-alarm-bg: var(--alarm-bg);
+  --color-inspect: var(--inspect);
+  --color-inspect-bg: var(--inspect-bg);
+  --color-idle: var(--idle);
+}
 
-  --color-status-ok: #1e8449;
-  --color-status-partial: #d68910;
-  --color-status-skipped: #7f8c8d;
-  --color-status-error: #c0392b;
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #0a1013;
+  --panel: #10181c;
+  --panel-2: #152026;
+  --rule: #22323a;
+  --ink: #e4edf1;
+  --ink-2: #a9bcc5;
+  --ink-3: #7f949e;
+  --tool: #5fb0ff;
+  --tool-bg: #0f2638;
+  --sample: #ffa24a;
+  --sample-bg: #2d1c0c;
+  --clear: #5ed69a;
+  --clear-bg: #0e2a1e;
+  --alarm: #ff5c74;
+  --alarm-bg: #33121a;
+  --inspect: #f4c542;
+  --inspect-bg: #2e260b;
+  --idle: #5f7580;
+}
 
-  --color-direction-malicious: #c0392b;
-  --color-direction-benign: #1e8449;
-  --color-direction-neutral: #7f8c8d;
+[data-theme="light"] {
+  color-scheme: light;
+  --ground: #eef2f3;
+  --panel: #ffffff;
+  --panel-2: #f5f8f9;
+  --rule: #d3dde1;
+  --ink: #0e1a1f;
+  --ink-2: #3c5059;
+  --ink-3: #5a6e77;
+  --tool: #0b5fb3;
+  --tool-bg: #e3effb;
+  --sample: #a44c00;
+  --sample-bg: #fbeee0;
+  --clear: #11774a;
+  --clear-bg: #e1f4ea;
+  --alarm: #b3163a;
+  --alarm-bg: #fbe4e9;
+  --inspect: #8a6400;
+  --inspect-bg: #fbf1d3;
+  --idle: #8195a0;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --ground: #eef2f3;
+    --panel: #ffffff;
+    --panel-2: #f5f8f9;
+    --rule: #d3dde1;
+    --ink: #0e1a1f;
+    --ink-2: #3c5059;
+    --ink-3: #5a6e77;
+    --tool: #0b5fb3;
+    --tool-bg: #e3effb;
+    --sample: #a44c00;
+    --sample-bg: #fbeee0;
+    --clear: #11774a;
+    --clear-bg: #e1f4ea;
+    --alarm: #b3163a;
+    --alarm-bg: #fbe4e9;
+    --inspect: #8a6400;
+    --inspect-bg: #fbf1d3;
+    --idle: #8195a0;
+  }
 }
 
 html {
-  color-scheme: light dark;
+  background: var(--ground);
 }
 
 body {
-  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--tool) 35%, transparent);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--tool);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+* {
+  scrollbar-color: var(--rule) transparent;
+  scrollbar-width: thin;
+}
+
+a {
+  text-underline-offset: 3px;
+}
+
+input,
+select,
+textarea {
+  caret-color: var(--tool);
+}
+
+code,
+.data {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+/* The one authored motion: the report's scan sweep. A band of tool-blue
+   light passes once over the lane strip when a finished report opens, the
+   way a bag's image resolves on the screening monitor. Content is visible
+   from the first frame; the sweep only passes over it. */
+@keyframes scan-sweep {
+  from {
+    transform: translateX(-30%);
+    opacity: 0.9;
+  }
+  to {
+    transform: translateX(130%);
+    opacity: 0;
+  }
+}
+
+.scan-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.scan-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--tool) 16%, transparent), transparent);
+  animation: scan-sweep 1.1s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-sweep::after {
+    animation: none;
+    display: none;
+  }
 }

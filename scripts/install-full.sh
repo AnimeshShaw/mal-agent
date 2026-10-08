@@ -118,8 +118,32 @@ if ! command -v ollama >/dev/null 2>&1; then
         curl -fsSL https://ollama.com/install.sh | sh
     fi
 fi
-if command -v ollama >/dev/null 2>&1 && confirm "Pull qwen2.5-coder:7b (~4.7GB)?"; then
-    ollama pull qwen2.5-coder:7b
+if command -v ollama >/dev/null 2>&1; then
+    # Both local models actually evaluated in this project's own research
+    # (docs/RESEARCH.md): qwen3:8b (best coverage, 84.9%) and gemma4:12b
+    # (best local FPR, 8.3%). Pull both so --judge-model can use either.
+    if confirm "Pull qwen3:8b (~5GB)?"; then
+        ollama pull qwen3:8b
+    fi
+    if confirm "Pull gemma4:12b (~8GB)?"; then
+        ollama pull gemma4:12b
+    fi
+fi
+
+# EMBER2024 PE classifier model -- the ~3.8MB .model file this project's
+# EMBER_MODEL_PATH expects, fetched directly from the public HF repo (no
+# auth, no need to clone the full 512MB model family or the 3.2M-file
+# dataset -- see docs/RESEARCH.md §1 for why PE-only).
+ember_model_path="$INSTALL_DIR/EMBER2024_PE.model"
+if [ ! -f "$ember_model_path" ]; then
+    if confirm "Download the EMBER2024 PE classifier model (~3.8MB)?"; then
+        curl -L "https://huggingface.co/joyce8/EMBER2024-benchmark-models/resolve/main/EMBER2024_PE.model" \
+            -o "$ember_model_path"
+        echo "export EMBER_MODEL_PATH=\"$ember_model_path\"" >> "$HOME/.profile"
+        echo "Downloaded to $ember_model_path and added EMBER_MODEL_PATH to ~/.profile"
+    fi
+else
+    echo "EMBER model already found at $ember_model_path, skipping download."
 fi
 
 # Postgres

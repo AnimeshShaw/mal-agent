@@ -1,3 +1,7 @@
+---
+title: Documentation index
+---
+
 # Documentation index
 
 **Start here, in this order:**
@@ -9,15 +13,18 @@
    there, what it adds.
 3. **[SETUP.md](SETUP.md)** — install instructions, both quick
    (Python-only) and full-automation paths.
-4. **[EFFICIENCY.md](EFFICIENCY.md)** — real measured wall-clock timing
-   per pipeline stage, and why cost isn't computed yet.
-5. **[ABLATION_LLM.md](ABLATION_LLM.md)** — real, executed ablation:
-   deterministic-only vs. deterministic + LLM, over real samples. Checks
-   the "LLMs narrate, never judge" invariant empirically, not just via
-   unit test.
-6. **[ML_CLASSIFIER_PLAN.md](ML_CLASSIFIER_PLAN.md)** — why the
-   deterministic gate abstains on 81.6% of samples, the decision to
-   adopt a pretrained classifier (EMBER2024) instead of training from
-   71 labels, and the phased plan to add it as a decision layer.
-7. **[AI-Malware-Analysis-Research-and-Framework.md](AI-Malware-Analysis-Research-and-Framework.md)**
-   — the research framing this project grew out of.
+4. **[CLI.md](CLI.md)** — every subcommand and flag, real `--help` output,
+   not hand-written prose that can drift from the actual code.
+5. **[RESEARCH.md](RESEARCH.md)** — the current research question
+   (bounded LLM adjudication for hybrid malware triage), the evidence-
+   bundle/routing/adjudication architecture, dataset v2, how to run and
+   reproduce every experiment, and the metrics used.
+
+A handful of earlier working documents (the original research dossier,
+the deterministic-gate-vs-EMBER decision log, an LLM ablation study, and
+per-stage timing numbers) are kept locally for reference but are not
+tracked in this repo — some contained personal/hardware context, and
+their headline numbers were superseded by the 2026-09-27/28 audit (a
+benign-set/known-good-allowlist overlap had made several reported
+precision/recall/F1 figures artifacts of a hash lookup, not analysis).
+`RESEARCH.md` is the current, accurate account.

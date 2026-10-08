@@ -113,7 +113,7 @@ def check_java() -> CheckResult:
 
 def check_ollama() -> CheckResult:
     base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model = os.getenv("LOCAL_MODEL", "qwen2.5-coder:7b")
+    model = os.getenv("LOCAL_MODEL", "qwen3:8b")
     try:
         with urllib.request.urlopen(f"{base}/api/tags", timeout=3) as resp:
             data = json.loads(resp.read().decode("utf-8"))

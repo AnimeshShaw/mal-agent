@@ -110,9 +110,32 @@ if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
             --accept-package-agreements --accept-source-agreements -e
     }
 }
-if ((Get-Command ollama -ErrorAction SilentlyContinue) -and
-    (Confirm-Step "Pull qwen2.5-coder:7b (~4.7GB)?")) {
-    ollama pull qwen2.5-coder:7b
+if (Get-Command ollama -ErrorAction SilentlyContinue) {
+    # Both local models actually evaluated in this project's own research
+    # (docs/RESEARCH.md): qwen3:8b (best coverage, 84.9%) and gemma4:12b
+    # (best local FPR, 8.3%). Pull both so --judge-model can use either.
+    if (Confirm-Step "Pull qwen3:8b (~5GB)?") {
+        ollama pull qwen3:8b
+    }
+    if (Confirm-Step "Pull gemma4:12b (~8GB)?") {
+        ollama pull gemma4:12b
+    }
+}
+
+# EMBER2024 PE classifier model -- the ~3.8MB .model file this project's
+# EMBER_MODEL_PATH expects, fetched directly from the public HF repo (no
+# auth, no need to clone the full 512MB model family or the 3.2M-file
+# dataset -- see docs/RESEARCH.md §1 for why PE-only).
+$emberModelPath = "$InstallDir\EMBER2024_PE.model"
+if (-not (Test-Path $emberModelPath)) {
+    if (Confirm-Step "Download the EMBER2024 PE classifier model (~3.8MB)?") {
+        Invoke-WebRequest -Uri "https://huggingface.co/joyce8/EMBER2024-benchmark-models/resolve/main/EMBER2024_PE.model" `
+            -OutFile $emberModelPath
+        [Environment]::SetEnvironmentVariable("EMBER_MODEL_PATH", $emberModelPath, "User")
+        Write-Host "Downloaded to $emberModelPath and set EMBER_MODEL_PATH (User scope -- restart your shell)."
+    }
+} else {
+    Write-Host "EMBER model already found at $emberModelPath, skipping download."
 }
 
 # Postgres

@@ -1,0 +1,34 @@
+{
+  "title": "mal-agent: Evidence-Grounded Agentic Malware Triage with Bounded LLM Adjudication",
+  "description": "<p>mal-agent is an evidence-grounded, agentic static malware analysis pipeline. Deterministic tools (PE/ELF/Mach-O parsing, capa capability detection, Authenticode verification, YARA matching, headless Ghidra decompilation, format-aware triage for scripts/LNK/Office/PDF, and a pretrained EMBER2024 classifier) produce a verdict a human can audit end to end: every claim traces to real tool evidence, and the classifier's decision authority is restricted to the file formats it was actually trained on.</p><p>An opt-in research mode (<code>fusion_mode=\"judge\"</code>) routes only the classifier's genuinely uncertain cases -- out-of-distribution formats, gray-zone scores, classifier-vs-evidence conflicts -- to a bounded LLM adjudicator that must cite tool-derived evidence and is structurally barred from treating the sample's own text as proof of its own innocence. See docs/RESEARCH.md for the full research design, dataset, and reproduction instructions, and paper/ for the accompanying write-up.</p>",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Shaw, Animesh",
+      "affiliation": ""
+    }
+  ],
+  "keywords": [
+    "malware-analysis",
+    "reverse-engineering",
+    "large-language-models",
+    "llm-as-judge",
+    "agentic-ai",
+    "static-analysis",
+    "capa",
+    "ghidra",
+    "yara",
+    "ember2024",
+    "security",
+    "hybrid-classifier"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/AnimeshShaw/mal-agent",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

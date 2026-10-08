@@ -225,7 +225,8 @@ def test_uploaded_filename_path_traversal_is_neutralized(client, monkeypatch, tm
     assert canary.read_text() == "original contents", "path traversal wrote outside the temp dir"
     written_path = Path(captured["path"])
     assert ".." not in written_path.parts
-    assert written_path.name in ("canary.txt", "passwd")  # just the basename survives, no traversal
+    # Stored under a neutral name; the client's name is display metadata only.
+    assert written_path.name == "upload.bin"
 
 
 def test_report_endpoints_serve_rendered_reports_once_complete(client, monkeypatch, tmp_path):

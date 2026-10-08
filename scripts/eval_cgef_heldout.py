@@ -38,7 +38,7 @@ def _ember_score(state):
 
 
 def _confusion(rows, key):
-    tp = fp = tn = fn = other = 0
+    tp = fp = tn = fn = other = other_mal = 0
     for label, pred in rows:
         p = pred[key]
         if label == "malicious":
@@ -48,6 +48,7 @@ def _confusion(rows, key):
                 fn += 1
             else:
                 other += 1
+                other_mal += 1
         else:
             if p == "benign":
                 tn += 1
@@ -56,7 +57,8 @@ def _confusion(rows, key):
             else:
                 other += 1
     precision = tp / (tp + fp) if (tp + fp) else float("nan")
-    recall = tp / (tp + fn) if (tp + fn) else float("nan")
+    # strict recall: a non-committal call on real malware is a miss
+    recall = tp / (tp + fn + other_mal) if (tp + fn + other_mal) else float("nan")
     f1 = (2 * precision * recall / (precision + recall)
          if (precision + recall) and precision == precision and recall == recall else float("nan"))
     return dict(tp=tp, fp=fp, tn=tn, fn=fn, other=other, precision=precision, recall=recall, f1=f1)
