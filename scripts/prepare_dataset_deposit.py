@@ -24,6 +24,23 @@ Defanging scope (deliberately conservative, see body for why):
     above; that's a real scoping choice (high false-positive risk on
     ordinary text) stated here rather than silently done
 
+PII finding (added after the first deposit build): the pipeline's own IOC
+extractor tags some sample-derived strings "type": "email" -- these are
+real email addresses found IN the sample (e.g. embedded in benign
+document/OLE/PDF corpora that look like real government-staff
+correspondence, such as tsinks@cdc.gov, hammock.bradford@dol.gov). The
+first version of this script only handled domain/ip/url IOC types and let
+every email through unredacted, both in the typed iocs[] list and via the
+raw findings[].excerpt text that duplicates the same strings. Every email
+address (local-part@domain) anywhere in any string is now redacted to
+"[redacted]@domain" -- the domain is kept (useful for research, low
+privacy risk) but the identifying local part is not. This is applied
+unconditionally to ALL text, not just IOC-typed fields, which also
+redacts some harmless false positives (SSH cipher-suite names like
+chacha20-poly1305@openssh.com, public vendor contacts like
+appro@openssl.org) -- an acceptable loss of string fidelity against the
+alternative of maybe missing a real person's address.
+
 Output: a single clean directory tree, ready to zip and upload.
 """
 from __future__ import annotations
@@ -38,6 +55,18 @@ REPO = Path(__file__).resolve().parent.parent
 
 IPV4_RE = re.compile(r"\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b")
 URL_RE = re.compile(r"\b(https?)://([^\s\"'<>]+)")
+# No trailing \b: the pipeline's own IOC extractor sometimes appends a
+# stray trailing character to an extracted email excerpt (observed:
+# "kevin.liang@acer.com0", "0U6b@N.sq4") -- \b fails between two word
+# characters (m|0, q|4), which silently skipped redacting the real
+# address entirely. Matching without a trailing anchor still redacts the
+# email and correctly leaves any trailing garbage character attached
+# after it (e.g. "[redacted]@acer.com0").
+EMAIL_RE = re.compile(r"\b([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+
+
+def _email_sub(m: re.Match) -> str:
+    return f"[redacted]@{m.group(2)}"
 
 
 def _valid_octets(m: re.Match) -> bool:
@@ -63,17 +92,23 @@ def defang_text(s: str) -> str:
         return m.group(0).replace(".", "[.]")
 
     s = IPV4_RE.sub(_ip_sub, s)
+
+    # PII: redact the identifying local-part of any email address, in ANY
+    # string (not just IOC-typed fields) -- see module docstring. Keeps the
+    # domain for research value, drops the part that identifies a person.
+    s = EMAIL_RE.sub(_email_sub, s)
     return s
 
 
 def defang_ioc_value(value: str, ioc_type: str) -> str:
-    """For entries the pipeline already explicitly typed as domain/ip/url,
-    defang unconditionally -- no ambiguity, these are known indicators."""
+    """For entries the pipeline already explicitly typed as domain/ip/url/
+    email, defang/redact unconditionally -- no ambiguity, these are known
+    indicators (and for email, known PII)."""
     if not isinstance(value, str):
         return value
     if ioc_type in ("domain", "ip"):
         return value.replace(".", "[.]")
-    if ioc_type == "url":
+    if ioc_type in ("url", "email"):
         return defang_text(value)
     return value
 
