@@ -68,8 +68,8 @@ def main(argv=None):
         ep.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
         ep.add_argument("--enable-models", action="store_true")
         ep.add_argument("--no-cloud", action="store_true")
-        ep.add_argument("--local-model", default="qwen2.5-coder:7b",
-                        help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
+        ep.add_argument("--local-model", default="qwen3:8b",
+                        help="Ollama model tag to use locally (default: qwen3:8b)")
         ep.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
         ep.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef"],
@@ -132,9 +132,9 @@ def main(argv=None):
                                                  "to influence the real verdict")
         vp.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
         vp.add_argument("--no-cloud", action="store_true")
-        vp.add_argument("--local-model", default="qwen2.5-coder:7b",
+        vp.add_argument("--local-model", default="qwen3:8b",
                         help="Ollama model tag to ask for the verdict suggestion "
-                             "(default: qwen2.5-coder:7b)")
+                             "(default: qwen3:8b)")
         vp.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
         vp.add_argument("--out", default=None, help="also write the report text to this path")
@@ -175,8 +175,8 @@ def main(argv=None):
                         help="without this, no model is configured and every case is "
                              "conservatively flagged as unverified (honest, but degenerate)")
         ap.add_argument("--no-cloud", action="store_true")
-        ap.add_argument("--local-model", default="qwen2.5-coder:7b",
-                       help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
+        ap.add_argument("--local-model", default="qwen3:8b",
+                       help="Ollama model tag to use locally (default: qwen3:8b)")
         ap.add_argument("--escalation-provider", default="anthropic",
                         choices=["openai", "anthropic", "gemini", "xai"])
         ap.add_argument("--out", default=None, help="also write the report text to this path")
@@ -258,9 +258,9 @@ def main(argv=None):
                                                  "(it should not -- LLMs narrate, never judge)")
         lp.add_argument("manifest", help="CSV manifest: path,label[,notes] (label: benign|malicious)")
         lp.add_argument("--no-cloud", action="store_true")
-        lp.add_argument("--local-model", default="qwen2.5-coder:7b",
+        lp.add_argument("--local-model", default="qwen3:8b",
                         help="Ollama model tag to use for the +LLM condition "
-                             "(default: qwen2.5-coder:7b)")
+                             "(default: qwen3:8b)")
         lp.add_argument("--escalation-provider", default=None,
                         choices=[None, "openai", "anthropic", "gemini", "xai"],
                         help="cloud escalation provider for the +LLM condition "
@@ -306,8 +306,8 @@ def main(argv=None):
                    help="enable local/cloud model stage (needs Ollama or API keys)")
     p.add_argument("--no-cloud", action="store_true", help="disable cloud escalation (local only)")
     p.add_argument("--allow-pseudocode-egress", action="store_true")
-    p.add_argument("--local-model", default="qwen2.5-coder:7b",
-                   help="Ollama model tag to use locally (default: qwen2.5-coder:7b)")
+    p.add_argument("--local-model", default="qwen3:8b",
+                   help="Ollama model tag to use locally (default: qwen3:8b)")
     p.add_argument("--escalation-provider", default="anthropic",
                    choices=["openai", "anthropic", "gemini", "xai"])
     p.add_argument("--fusion-mode", default="simple", choices=["simple", "cgef", "judge"],

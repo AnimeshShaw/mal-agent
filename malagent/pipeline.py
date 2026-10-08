@@ -64,7 +64,7 @@ def _judge_provider(spec: Optional[str], policy: EgressPolicy):
 
 def analyze(path: str, *, provenance: Optional[Provenance] = None,
             policy: Optional[EgressPolicy] = None, enable_models: bool = False,
-            local_provider: str = "ollama", local_model: str = "qwen2.5-coder:7b",
+            local_provider: str = "ollama", local_model: str = "qwen3:8b",
             escalation_provider: Optional[str] = "anthropic",
             escalation_model: Optional[str] = "claude-sonnet-4-6",
             fusion_mode: str = "simple",

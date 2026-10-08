@@ -1,3 +1,7 @@
+---
+title: Documentation index
+---
+
 # Documentation index
 
 **Start here, in this order:**
@@ -9,7 +13,9 @@
    there, what it adds.
 3. **[SETUP.md](SETUP.md)** — install instructions, both quick
    (Python-only) and full-automation paths.
-4. **[RESEARCH.md](RESEARCH.md)** — the current research question
+4. **[CLI.md](CLI.md)** — every subcommand and flag, real `--help` output,
+   not hand-written prose that can drift from the actual code.
+5. **[RESEARCH.md](RESEARCH.md)** — the current research question
    (bounded LLM adjudication for hybrid malware triage), the evidence-
    bundle/routing/adjudication architecture, dataset v2, how to run and
    reproduce every experiment, and the metrics used.

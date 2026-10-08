@@ -7,6 +7,15 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-34d399.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-38bdf8.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/status-v0.1%20beta-f59e0b.svg" alt="Status: beta">
+  <a href="https://animeshshaw.github.io/mal-agent/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-8b5cf6.svg" alt="Docs"></a>
+  <a href="https://huggingface.co/datasets/AnimeshShaw/mal-agent-llm-adjudication-eval"><img src="https://img.shields.io/badge/dataset-HuggingFace-yellow.svg" alt="Dataset on Hugging Face"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/best%20F1-0.837-success.svg" alt="Best F1: 0.837">
+  <img src="https://img.shields.io/badge/best%20FPR-0.8%25-success.svg" alt="Best FPR: 0.8%">
+  <img src="https://img.shields.io/badge/eval%20samples-1%2C504-informational.svg" alt="1,504 evaluated samples">
+  <img src="https://img.shields.io/badge/adjudicators%20tested-3-informational.svg" alt="3 adjudicator models tested">
 </p>
 
 <p align="center">
@@ -82,9 +91,12 @@ configured but is broken, not merely absent.
 **One-command setup** (creates a venv, installs everything, scaffolds
 `.env`): `scripts/install.ps1` (Windows) or `scripts/install.sh`
 (Linux/macOS). A full-automation variant that also installs
-Ghidra/JDK/Ollama/Postgres: `scripts/install-full.ps1`/`.sh`. Full detail
-on both paths, plus a troubleshooting section built from real bugs hit
-during this project's own setup: **[docs/SETUP.md](docs/SETUP.md)**.
+Ghidra/JDK/Ollama/Postgres/EMBER model: `scripts/install-full.ps1`/`.sh`.
+Full detail on both paths, plus a troubleshooting section built from real
+bugs hit during this project's own setup: **[docs/SETUP.md](docs/SETUP.md)**.
+Every other script in `scripts/` (dataset construction, reproduction,
+one-off research runs) is catalogued in
+**[scripts/README.md](scripts/README.md)**.
 
 ### Web UI
 
@@ -130,7 +142,8 @@ mal-agent research ablate-llm dataset/manifest.csv
 ```
 
 Old flat forms (`mal-agent evaluate ...` without the `research` prefix)
-still work too, as undocumented-but-functional aliases.
+still work too, as undocumented-but-functional aliases. Full reference
+for every subcommand and flag: **[docs/CLI.md](docs/CLI.md)**.
 
 ## How it works
 
@@ -146,6 +159,45 @@ can never move the verdict score, the tool inventory, model routing and
 egress policy, the audit trail — is documented with diagrams in
 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**. Read that if you're
 evaluating or contributing to this project.
+
+## Results
+
+Main experiment, 681 held-out test samples, three adjudicator models
+(two local via Ollama, one frontier via API) under the same bounded
+routing policy — only classifier-uncertain cases are escalated to an LLM,
+and every LLM verdict must cite real tool evidence or it's overridden.
+Full numbers (per-format breakdowns, adversarial robustness, calibration,
+McNemar significance tests) are in
+**[docs/RESEARCH.md](docs/RESEARCH.md)**; the complete raw per-sample
+output behind every number here is deposited on
+[Hugging Face](https://huggingface.co/datasets/AnimeshShaw/mal-agent-llm-adjudication-eval)
+and Mendeley Data (DOI pending) — this table is the summary, not the
+whole story.
+
+| Arm | Precision | Recall | F1 | FPR | Coverage |
+|---|---|---|---|---|---|
+| EMBER2024 alone (PE, no LLM) | 0.983 | 0.338 | 0.503 | 1.9% | 32.5% |
+| Hybrid[qwen3:8b] (local) | 0.886 | 0.766 | 0.822 | 11.5% | **84.9%** |
+| Hybrid[gemma4:12b] (local) | 0.953 | 0.728 | 0.825 | 8.3% | 57.0% |
+| Hybrid[Gemini 3.1 Pro] (frontier) | **0.992** | **0.725** | **0.837** | **0.8%** | 74.4% |
+
+Headline findings, stated plainly:
+
+- **Bounding fixes a coverage collapse that hurts every model** — EMBER
+  alone commits on only 32.5% of samples; every Hybrid arm roughly
+  doubles or triples that while keeping precision above 0.88.
+- **The frontier model's own false-positive rate is already low without
+  bounding** (LLM-alone[Gemini] FPR = 0.8%, identical to its Hybrid FPR)
+  — the "letting an LLM judge everything inflates false positives"
+  problem this project's bounding exists to fix is real for 7–12B local
+  models (FPR would be 77–89% unbounded) and nearly absent for a frontier
+  model. Bounding still buys something for a frontier model (it's what
+  gates the other 25.6% of cases down to a 0% override rate), just not
+  the same thing it buys for a local one.
+- **No single model/metric dominates**: qwen3:8b's Hybrid arm beats
+  Gemini's on raw per-sample correctness (McNemar 68 vs. 45, p=0.038) —
+  driven by qwen3:8b committing on far more cases (84.9% vs. 74.4%
+  coverage), not by being more accurate per case it does commit on.
 
 ## Turn on more
 
@@ -238,8 +290,10 @@ evaluating or contributing to this project.
   drives Ghidra's Java API directly from this process instead.
 - **LLM reasoning agents:** `pip install -e ".[providers]"`, set keys in
   `.env`, add `--enable-models` (and `--no-cloud` to stay local-only).
-  Local: install [Ollama](https://ollama.com),
-  `ollama pull qwen2.5-coder:7b`.
+  Local: install [Ollama](https://ollama.com), then `ollama pull qwen3:8b`
+  and/or `ollama pull gemma4:12b` — the two local models this project's own
+  research actually evaluated (see [Results](#results) below); either
+  works with `--judge-model ollama:<model>`.
 - **Postgres** (optional — in-memory repository is the supported
   default): `docker compose up -d db`, set `DATABASE_URL` (host port
   **5433**, not 5432 — see the comment in `docker-compose.yml` for why).

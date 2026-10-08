@@ -1,3 +1,7 @@
+---
+title: Research: bounded LLM adjudication for hybrid malware triage
+---
+
 # Research: bounded LLM adjudication for hybrid malware triage
 
 This is the reproduction guide for the research pivot recorded on

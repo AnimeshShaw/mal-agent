@@ -107,7 +107,7 @@ def _unresolved_count(state) -> int:
 
 
 def run_llm_ablation(samples: list, *, analyze_fn: Optional[Callable] = None,
-                     local_model: str = "qwen2.5-coder:7b",
+                     local_model: str = "qwen3:8b",
                      escalation_provider: Optional[str] = None,
                      escalation_model: Optional[str] = None,
                      no_cloud: bool = True) -> LlmAblationReport:

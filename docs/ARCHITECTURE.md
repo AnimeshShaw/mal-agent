@@ -1,3 +1,7 @@
+---
+title: MAL-AGENT Architecture
+---
+
 # MAL-AGENT Architecture
 
 This is the map of how MAL-AGENT is put together and *why* — not just
