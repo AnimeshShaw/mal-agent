@@ -48,10 +48,15 @@ machine** — this project's entire live-verification history is Windows.
 Treat it as a documented best-effort translation of the verified Windows
 steps, not a tested equal. Report back what breaks.
 
-## Manual tool setup (what Path A leaves undone)
+## Manual tool setup (the heavy external tools)
 
 Each of these was verified working live during this project's own setup —
-exact commands, not guesses.
+exact commands, not guesses. This section covers the heavy *external*
+tools only (capa, Ghidra, Ollama, die, Postgres). Lighter integrations
+that are already `pip`-installed by Path A but need their own env-var
+configuration to turn on — YARA rule matching, VirusTotal hash lookup,
+local IOC-reputation blocklists — are documented in
+**[Turn On More](FEATURES.md)**, not repeated here.
 
 ### capa (capability/ATT&CK mapping)
 

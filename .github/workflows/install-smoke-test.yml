@@ -73,6 +73,35 @@ jobs:
           "not a real sample" | Out-File -Encoding ascii smoke.txt
           .venv\Scripts\python.exe -m malagent.cli smoke.txt --out smoke-out
 
+      # The step above exits 0 even if it silently wrote nothing -- this
+      # is what actually proves mal-agent produced a real, parseable
+      # verdict after a fresh install, not just that the command ran.
+      - name: Verify the analysis actually produced a verdict (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python3 -c "
+          import glob, json
+          assert glob.glob('/tmp/smoke-out/*_report.md'), 'report.md missing'
+          assert glob.glob('/tmp/smoke-out/*_report.txt'), 'report.txt missing'
+          f = glob.glob('/tmp/smoke-out/*_verdict.json')[0]
+          v = json.load(open(f))
+          assert 'verdict' in v and 'confidence' in v, f'verdict.json missing expected keys: {v}'
+          print('verdict.json OK:', v['verdict'], v['confidence'])
+          "
+
+      - name: Verify the analysis actually produced a verdict (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $report = Get-ChildItem smoke-out -Filter *_report.md
+          if (-not $report) { throw "report.md missing" }
+          $verdictFile = Get-ChildItem smoke-out -Filter *_verdict.json
+          if (-not $verdictFile) { throw "verdict.json missing" }
+          $v = Get-Content $verdictFile.FullName -Raw | ConvertFrom-Json
+          if (-not $v.verdict -or -not ($v.PSObject.Properties.Name -contains "confidence")) {
+            throw "verdict.json missing expected keys"
+          }
+          Write-Host "verdict.json OK: $($v.verdict) $($v.confidence)"
+
   full:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
@@ -108,3 +137,34 @@ jobs:
       - name: mal-agent doctor (Windows)
         if: runner.os == 'Windows'
         run: .venv\Scripts\python.exe -m malagent.cli doctor
+
+      # doctor only proves each tool is individually reachable -- this is
+      # what proves the full toolchain (capa, Ghidra, Ollama) actually
+      # produces a real verdict together, end to end, on a real PE
+      # binary (the runner's own python interpreter -- safe, real, always
+      # present). --enable-models exercises the LLM reasoning stage too.
+      - name: Real end-to-end analysis against a real PE binary (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          PYEXE=$(command -v python3)
+          .venv/bin/python -m malagent.cli "$PYEXE" --enable-models --no-cloud --out /tmp/full-out
+          python3 -c "
+          import glob, json
+          f = glob.glob('/tmp/full-out/*_verdict.json')[0]
+          v = json.load(open(f))
+          assert 'verdict' in v and 'confidence' in v, f'verdict.json missing expected keys: {v}'
+          print('full-toolchain verdict.json OK:', v['verdict'], v['confidence'])
+          "
+
+      - name: Real end-to-end analysis against a real PE binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $pyExe = (Get-Command python).Source
+          .venv\Scripts\python.exe -m malagent.cli $pyExe --enable-models --no-cloud --out full-out
+          $verdictFile = Get-ChildItem full-out -Filter *_verdict.json
+          if (-not $verdictFile) { throw "verdict.json missing" }
+          $v = Get-Content $verdictFile.FullName -Raw | ConvertFrom-Json
+          if (-not $v.verdict -or -not ($v.PSObject.Properties.Name -contains "confidence")) {
+            throw "verdict.json missing expected keys"
+          }
+          Write-Host "full-toolchain verdict.json OK: $($v.verdict) $($v.confidence)"

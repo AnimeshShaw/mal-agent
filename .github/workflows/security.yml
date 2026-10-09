@@ -1,0 +1,107 @@
+name: Security
+
+# Complements the repo-level security features (CodeQL default setup,
+# secret scanning, Dependabot) with CI-driven supply-chain checks:
+# a real SBOM, dependency vulnerability scanning, and a filesystem/
+# secret scan -- the parts that need to run against THIS repo's actual
+# dependency tree on every change, not just a periodic repo-wide scan.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 8 * * 1" # Mondays, 08:00 UTC -- catches newly-disclosed
+                         # CVEs in dependencies that didn't change
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sbom:
+    name: Generate SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate the dependency tree the SBOM is built from
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[full,providers,ghidra,web,docs]"
+          pip install cyclonedx-bom
+
+      - name: Build CycloneDX SBOM
+        run: cyclonedx-py environment -o sbom.cyclonedx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cyclonedx.json
+          retention-days: 90
+
+  dependency-audit:
+    name: Python dependency vulnerability scan (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[full,providers,ghidra,web,docs]"
+          pip install pip-audit
+
+      # Report-only (non-blocking) for now: this project pins
+      # thrember/signify deliberately (see pyproject.toml's comment on
+      # that exact version pin) and some transitive pins in a research-
+      # heavy dependency tree are known-noisy for pip-audit's advisory
+      # matching. Findings are surfaced in the job summary either way --
+      # promote to blocking once a baseline of accepted/false-positive
+      # findings is established.
+      - name: Run pip-audit
+        run: pip-audit --desc -f json -o pip-audit.json || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit.json
+          retention-days: 90
+
+  trivy-scan:
+    name: Filesystem + secret scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0" # report-only; see dependency-audit's note on baselining
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  dependency-review:
+    name: Dependency review (PRs only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4

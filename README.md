@@ -15,8 +15,9 @@
   <img src="https://img.shields.io/badge/best%20F1-0.837-success.svg" alt="Best F1: 0.837">
   <img src="https://img.shields.io/badge/best%20FPR-0.8%25-success.svg" alt="Best FPR: 0.8%">
   <img src="https://img.shields.io/badge/eval%20samples-1%2C504-informational.svg" alt="1,504 evaluated samples">
-  <img src="https://img.shields.io/badge/adjudicators%20tested-3-informational.svg" alt="3 adjudicator models tested">
+  <img src="https://img.shields.io/badge/adjudicators%20tested-3-informational.svg" alt="3 adjudicator models tested: qwen3:8b, gemma4:12b, Gemini 3.1 Pro" title="qwen3:8b, gemma4:12b, Gemini 3.1 Pro">
 </p>
+<p align="center"><sub>Adjudicators tested: <code>qwen3:8b</code> and <code>gemma4:12b</code> (local, via Ollama), Gemini 3.1 Pro (frontier, via API) — see <a href="#results">Results</a>.</sub></p>
 
 <p align="center">
   <b>Every verdict traces to tool evidence. Nothing is guessed.</b>
