@@ -23,7 +23,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package + test dependencies
-        run: python -m pip install --upgrade pip && pip install -e ".[full,dev]"
+        # Must include 'web': pytest collects web/backend/tests/ too, and
+        # those import fastapi/uvicorn at module level. This was silently
+        # missing before -- every web-backend test had been failing in CI
+        # (not locally, where a dev venv already had fastapi installed for
+        # other reasons) since the web UI's test suite was first added.
+        run: python -m pip install --upgrade pip && pip install -e ".[full,dev,web]"
 
       - name: Run test suite
         run: pytest -q
