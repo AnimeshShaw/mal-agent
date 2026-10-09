@@ -25,8 +25,8 @@ jobs:
     name: Generate SBOM (CycloneDX)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -39,7 +39,7 @@ jobs:
       - name: Build CycloneDX SBOM
         run: cyclonedx-py environment -o sbom.cyclonedx.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: sbom-cyclonedx
           path: sbom.cyclonedx.json
@@ -49,8 +49,8 @@ jobs:
     name: Python dependency vulnerability scan (pip-audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -70,7 +70,7 @@ jobs:
       - name: Run pip-audit
         run: pip-audit --desc -f json -o pip-audit.json || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: pip-audit-report
           path: pip-audit.json
@@ -80,7 +80,7 @@ jobs:
     name: Filesystem + secret scan (Trivy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
       - name: Run Trivy filesystem scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -93,7 +93,7 @@ jobs:
           exit-code: "0" # report-only; see dependency-audit's note on baselining
 
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4.38.3
         if: always()
         with:
           sarif_file: trivy-results.sarif
@@ -103,5 +103,5 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/dependency-review-action@v5.0.0
