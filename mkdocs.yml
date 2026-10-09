@@ -1,0 +1,77 @@
+site_name: mal-agent
+site_description: Evidence-grounded, agentic static malware analysis with bounded LLM adjudication
+site_url: https://animeshshaw.github.io/mal-agent/
+repo_url: https://github.com/AnimeshShaw/mal-agent
+repo_name: AnimeshShaw/mal-agent
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - CLI Reference: CLI.md
+  - Architecture: ARCHITECTURE.md
+  - Pipeline: PIPELINE.md
+  - Research & Benchmarks: RESEARCH.md
+  - Full Setup Guide: SETUP.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+
+exclude_docs: |
+  README.md
+  AUDIT.md
+  TODO.md
+  V2-DESIGN.md
+  MalAgentArchitecture.md
+  AI-Malware-Analysis-Research-and-Framework.md
+  ML_CLASSIFIER_PLAN.md
+  ABLATION_LLM.md
+  EFFICIENCY.md
+  plans/
+  superpowers/
+  assets/

@@ -32,7 +32,11 @@ from .tickets import TicketStore
 
 _DEFAULT_FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 _SSE_POLL_INTERVAL_S = 0.2
-_DEFAULT_DB_PATH = "malagent_web.db"
+## Lives under var/, not the repo root -- a stray *.db file sitting next
+# to pyproject.toml reads as an orphaned artifact. var/ is created on
+# demand (see ensure_default_database_url below) and is gitignored as a
+# whole, same treatment as quarantine/ and out/.
+_DEFAULT_DB_PATH = "var/malagent_web.db"
 _FUSION_MODES = ("simple", "cgef", "judge")
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 _UPLOAD_CHUNK = 1 << 20
@@ -42,6 +46,7 @@ def ensure_default_database_url() -> None:
     """Server-startup concern only, deliberately NOT called by create_app():
     mutating the process environment at import/construct time leaked
     DATABASE_URL into the whole test session once."""
+    Path(_DEFAULT_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("DATABASE_URL", f"sqlite:///{_DEFAULT_DB_PATH}")
 
 

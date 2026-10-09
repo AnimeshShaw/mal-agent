@@ -1,7 +1,3 @@
----
-title: Research: bounded LLM adjudication for hybrid malware triage
----
-
 # Research: bounded LLM adjudication for hybrid malware triage
 
 This is the reproduction guide for the research pivot recorded on
@@ -31,9 +27,8 @@ project's history) as strong on Windows executables, but:
 - **Real campaigns lead with exactly these formats** — MalwareBazaar's
   recent feed is full of `.lnk`, `.js`, `.one`, `.iso`, `.hta`, macro
   documents — which is why `malagent/format_triage.py` exists at all.
-- The field's own literature (surveyed in the earlier
-  `AI-Malware-Analysis-Research-and-Framework.md`) independently
-  converges on "LLMs describe code well, judge maliciousness poorly" —
+- The field's own literature independently converges on "LLMs describe
+  code well, judge maliciousness poorly" —
   but that literature tests LLMs *deciding everything*, not LLMs used
   narrowly on the specific cases a calibrated classifier is uncertain
   about, with a hard requirement to cite tool evidence.
@@ -78,7 +73,15 @@ interleaved, no gate) is the adversarial-robustness control condition.
 ## 3. Dataset v2
 
 `dataset/manifest_v2.csv` (built by `scripts/make_manifest_v2.py`), 1,504
-samples:
+samples. **The frozen evidence bundles, manifest, and every raw
+experiment output behind every number in this document are deposited
+publicly on [Hugging Face](https://huggingface.co/datasets/AnimeshShaw/mal-agent-llm-adjudication-eval)
+and Mendeley Data** — no malware executables, only derived metadata and
+model output, defanged and PII-redacted (see the dataset's own
+`DATASET_CARD.md`). You don't need to rebuild anything to inspect or
+reproduce the analysis below; `scripts/prepare_dataset_deposit.py` is
+the exact script that built that deposit from this repo's own
+`research_out/` + `bundles/v2/`.
 
 | | dev | test |
 |---|---|---|

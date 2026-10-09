@@ -9,10 +9,16 @@ mal-agent-reports/
 .env
 
 # Local SQLite persistence for the web UI (docs/TODO.md Phase 8) --
-# per-machine runtime data, not project content.
+# per-machine runtime data, not project content. var/ is where it
+# actually lives now (web/backend/malagent_web/app.py); *.db stays too
+# in case MAL_AGENT_WEB_DB points somewhere else.
 *.db
+var/
 web/frontend/node_modules/
 web/frontend/dist/
+
+# mkdocs build output (mkdocs.yml) -- generated, not source.
+/site/
 
 # Internal engineering-log docs -- kept locally for reference, not published.
 # (Also stripped from git history entirely; see the full-history backup
@@ -39,7 +45,7 @@ docs/ML_CLASSIFIER_PLAN.md
 docs/ABLATION_LLM.md
 docs/EFFICIENCY.md
 docs/superpowers/
-PRODUCT.md
+internal/
 # Paper sources and experiment outputs -- private until submission.
 paper/
 research_out/

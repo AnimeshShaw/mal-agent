@@ -76,6 +76,11 @@ web = [
   "uvicorn>=0.29",
   "python-multipart>=0.0.9",
 ]
+docs = [
+  # Builds the GitHub Pages site (mkdocs.yml, docs/) -- not needed to
+  # use mal-agent itself, only to build/preview the documentation site.
+  "mkdocs-material>=9.5",
+]
 
 [project.scripts]
 mal-agent = "malagent.cli:main"

@@ -1,7 +1,3 @@
----
-title: Documentation index
----
-
 # Documentation index
 
 **Start here, in this order:**

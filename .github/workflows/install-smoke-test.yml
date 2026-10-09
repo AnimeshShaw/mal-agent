@@ -1,0 +1,110 @@
+name: Install scripts
+
+# Real end-to-end tests of the actual install scripts users run -- not
+# just "does pip install -e . work" (ci.yml already covers that via a
+# different path). Two tiers, because they have very different costs:
+#
+#   quick (install.sh / install.ps1): fast, no large downloads, every
+#   push -- this is the path most users take.
+#
+#   full (install-full.sh / install-full.ps1): downloads Ghidra (~570MB),
+#   both evaluated Ollama models (~13GB combined), and the EMBER PE
+#   classifier model -- too slow/costly to run on every push. Weekly
+#   schedule + manual dispatch instead.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/install*.ps1"
+      - "scripts/install*.sh"
+      - "pyproject.toml"
+      - ".github/workflows/install-smoke-test.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/install*.ps1"
+      - "scripts/install*.sh"
+  schedule:
+    - cron: "0 7 * * 1" # Mondays, 07:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  quick:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run install.sh (Linux)
+        if: runner.os == 'Linux'
+        run: bash scripts/install.sh
+
+      - name: Run install.ps1 (Windows)
+        if: runner.os == 'Windows'
+        run: pwsh scripts/install.ps1
+
+      - name: mal-agent doctor (Linux)
+        if: runner.os == 'Linux'
+        run: .venv/bin/python -m malagent.cli doctor
+
+      - name: mal-agent doctor (Windows)
+        if: runner.os == 'Windows'
+        run: .venv\Scripts\python.exe -m malagent.cli doctor
+
+      - name: Smoke-analyze a trivial file (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "not a real sample" > /tmp/smoke.txt
+          .venv/bin/python -m malagent.cli /tmp/smoke.txt --out /tmp/smoke-out
+
+      - name: Smoke-analyze a trivial file (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          "not a real sample" | Out-File -Encoding ascii smoke.txt
+          .venv\Scripts\python.exe -m malagent.cli smoke.txt --out smoke-out
+
+  full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Run install-full.sh (Linux)
+        if: runner.os == 'Linux'
+        run: bash scripts/install-full.sh --yes
+
+      - name: Run install-full.ps1 (Windows)
+        if: runner.os == 'Windows'
+        run: pwsh scripts/install-full.ps1 -Yes
+
+      - name: mal-agent doctor (Linux)
+        if: runner.os == 'Linux'
+        run: .venv/bin/python -m malagent.cli doctor
+
+      - name: mal-agent doctor (Windows)
+        if: runner.os == 'Windows'
+        run: .venv\Scripts\python.exe -m malagent.cli doctor

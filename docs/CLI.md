@@ -1,7 +1,3 @@
----
-title: CLI reference
----
-
 # CLI reference
 
 Every subcommand below is real `--help` output from this exact checkout —

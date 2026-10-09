@@ -94,7 +94,7 @@ The interface is built around one operational fact, not a marketing shell: every
 
 Colour is borrowed directly from baggage X-ray false-colour imaging and carries real semantic weight, not decoration: blue is a tool-derived fact, orange is text copied verbatim out of the sample (attacker-controlled, so it can supply context but never proof), green is cleared, red is flagged, amber is secondary inspection in progress, and a desaturated gray is idle/not-applicable. Dark is the default scene — an analyst at a monitor beside a disassembler — with a lighter "printed screening slip" mode as the alternate. The one authored motion, a single blue sweep across the lane strip on report open, echoes a bag's image resolving on a screening monitor; it never repeats and respects `prefers-reduced-motion`.
 
-This is an Operate-mode tool for a professional under time pressure (per PRODUCT.md): density and legibility outrank visual flourish, tool failures are never hidden, and the classifier is the only mechanism that decides — every other panel explains.
+This is an Operate-mode tool for a professional under time pressure (per internal/PRODUCT.md): density and legibility outrank visual flourish, tool failures are never hidden, and the classifier is the only mechanism that decides — every other panel explains.
 
 **Key Characteristics:**
 - Six-colour semantic system borrowed from a real-world imaging convention (X-ray false colour), not an arbitrary brand palette.

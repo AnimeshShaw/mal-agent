@@ -1,7 +1,3 @@
----
-title: MAL-AGENT Setup Guide
----
-
 # MAL-AGENT Setup Guide
 
 Two install paths. Both start the same way; the full-automation path adds
