@@ -318,7 +318,7 @@ def main(argv=None):
                         "conflict) to an LLM adjudicator (see docs/RESEARCH.md)")
     p.add_argument("--judge-model", default=None,
                    help="adjudicator for --fusion-mode judge, '<provider>:<model>', e.g. "
-                        "ollama:qwen3:8b or anthropic:claude-opus-5-5 (cloud needs egress)")
+                        "ollama:qwen3:8b or anthropic:claude-sonnet-4-6 (cloud needs egress)")
     p.add_argument("--out", default="./mal-agent-reports",
                    help="dir to write report.md + verdict.json + the mandatory report.txt "
                         "(default: ./mal-agent-reports; always written, files are namespaced "

@@ -71,7 +71,7 @@ class AnthropicProvider:
 
 class GeminiProvider:
     location = "cloud"
-    def __init__(self, model: str = "gemini-1.5-pro"):
+    def __init__(self, model: str = "gemini-3.1-pro-preview"):
         self.name = "gemini"; self.model = model
     def complete(self, system: str, prompt: str) -> str:
         import google.generativeai as genai

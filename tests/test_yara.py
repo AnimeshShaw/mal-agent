@@ -98,7 +98,7 @@ def test_single_category_evidence_falls_back_to_flat_count_threshold():
 
 
 def test_multi_category_evidence_requires_a_match_from_each_category():
-    """Real refinement, docs/TODO.md Phase 2: evidence spanning >=2
+    """Real refinement: evidence spanning >=2
     distinct categories (e.g. a risky import AND a suspicious string, not
     just two coincidental string hits) should produce a more specific
     rule requiring a match from EACH present category -- mirrors the same

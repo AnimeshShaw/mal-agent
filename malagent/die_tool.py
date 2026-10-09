@@ -1,5 +1,5 @@
 """die (Detect It Easy, https://github.com/horsicq/DIE-engine) packer/
-compiler identification (docs/TODO.md Phase 2). Degrades gracefully --
+compiler identification. Degrades gracefully --
 same pattern as CapaTool/FlossTool -- when `diec` (the CLI binary) isn't
 on PATH.
 

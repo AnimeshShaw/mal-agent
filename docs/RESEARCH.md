@@ -1,16 +1,17 @@
 # Research: bounded LLM adjudication for hybrid malware triage
 
-This is the reproduction guide for the research pivot recorded on
-2026-09-27/28: testing whether a frontier LLM, used only as a bounded
-*adjudicator* on cases a static classifier is genuinely unsure about (not
-as a free-standing judge of every file), improves on EMBER2024 alone —
-and whether its narratives and verdicts hold up under adversarial and
-reliability pressure. It supersedes the older
-`ML_CLASSIFIER_PLAN.md`/`ABLATION_LLM.md`/`EFFICIENCY.md` working docs
-(kept locally, gitignored — their headline numbers were measured on a
-71–90 sample set with a benign-set/known-good-allowlist overlap that made
+**In one sentence:** route only the cases a static classifier is
+genuinely unsure about to an LLM, require it to cite real tool evidence,
+and measure whether that beats EMBER2024 alone — including under
+adversarial and reliability pressure, not just on clean accuracy.
+
+**This page is the reproduction guide.** It supersedes older working
+docs (`ML_CLASSIFIER_PLAN.md`, `ABLATION_LLM.md`, `EFFICIENCY.md` — kept
+locally, gitignored, not published): their numbers came from a 71–90
+sample set with a benign/known-good-allowlist overlap bug that made
 several reported precision/recall/F1 figures artifacts of a hash lookup,
-not analysis; see the 2026-09-27 audit for the full account).
+not real analysis. This document's numbers are the corrected, current
+ones.
 
 ## 1. The question and why it's open
 

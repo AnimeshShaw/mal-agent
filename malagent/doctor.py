@@ -1,8 +1,8 @@
 """`mal-agent doctor`: verifies the real toolchain (Ghidra, capa+rules+sigs,
 Ollama+model, cloud keys, Postgres, known-good allowlist) is actually
 configured correctly, not just "present." Automates the manual
-verification performed throughout this project's live-testing sessions
-(docs/TODO.md M2 setup notes, docs/AUDIT.md). FAIL means something was
+verification performed throughout this project's live-testing sessions.
+FAIL means something was
 explicitly configured but doesn't work -- not mere absence of an optional
 tool, which is WARN (or PASS, when the absence has a supported default,
 like no DATABASE_URL falling back to the in-memory repository)."""

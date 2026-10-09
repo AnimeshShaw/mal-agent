@@ -1,4 +1,4 @@
-"""PE resource (.rsrc) parsing (docs/TODO.md Phase 2): a common way to hide
+"""PE resource (.rsrc) parsing: a common way to hide
 a payload is to embed it as a PE resource -- either a full second PE
 (dropper/loader pattern) or a high-entropy (packed/encrypted) blob. Neither
 signal existed before; PEHeaderTool only looked at imports/sections/overlay/

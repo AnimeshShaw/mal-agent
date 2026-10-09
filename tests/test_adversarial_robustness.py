@@ -1,6 +1,6 @@
-"""Self-authored adversarial/robustness test set (docs/TODO.md M6 eval
-item: "Robustness under packing/obfuscation + adversarial string-injection
-probes (self-authored AutoDAN-style test set)"). Two distinct concerns:
+"""Self-authored adversarial/robustness test set: robustness under
+packing/obfuscation plus adversarial string-injection probes
+(self-authored, AutoDAN-style). Two distinct concerns:
 
 1. Prompt-injection probes: malware-embedded strings crafted to hijack an
    LLM reading them (`security.py`'s scan_for_injection/wrap_untrusted,

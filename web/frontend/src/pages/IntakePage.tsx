@@ -186,7 +186,7 @@ export function IntakePage() {
                 id="path"
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
-                placeholder="D:\\samples\\invoice.lnk"
+                placeholder="/path/to/sample.bin"
                 className="data w-full bg-transparent py-2.5 text-ink outline-none placeholder:text-ink-3"
               />
             </div>

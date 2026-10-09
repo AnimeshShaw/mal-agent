@@ -1,5 +1,5 @@
 """die (Detect It Easy, https://github.com/horsicq/DIE-engine)
-packer/compiler identification (docs/TODO.md Phase 2). Deliberately
+packer/compiler identification. Deliberately
 NOT live-verified against a real `diec` installation: there is no `die`
 binary in this development environment, and installing/running an
 unfamiliar third-party executable autonomously (rather than a

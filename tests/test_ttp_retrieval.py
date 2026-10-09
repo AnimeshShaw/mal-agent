@@ -1,6 +1,5 @@
-"""Retrieval layer for the M4 "true RAG over MBC + ATT&CK" milestone
-(docs/TODO.md M4: "no narrative synthesis across techniques... no retrieval
-over MBC"). Grounds behavioral_analyst's cross-technique narrative in real,
+"""Retrieval layer for the "true RAG over MBC + ATT&CK" milestone.
+Grounds behavioral_analyst's cross-technique narrative in real,
 retrieved reference context instead of bare technique IDs/claim strings.
 
 Deliberately NOT an embedding/vector index: the corpus is a small, fixed set

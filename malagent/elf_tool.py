@@ -1,4 +1,4 @@
-"""ELF structural triage (docs/TODO.md Phase 2): before this, ELF/Mach-O
+"""ELF structural triage: before this, ELF/Mach-O
 samples only got generic string/entropy findings from StaticFeaturesTool
 -- no structural parsing at all, unlike PE's PEHeaderTool. Uses
 pyelftools; module-level `_ELFFile` (rather than importing inside the

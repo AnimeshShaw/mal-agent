@@ -1,4 +1,4 @@
-"""YARA rule MATCHING against a real corpus (docs/TODO.md Phase 2) --
+"""YARA rule MATCHING against a real corpus --
 distinct from the existing rule GENERATION in yara_gen.py. Same
 env-var-configured-external-data pattern as CAPA_RULES_PATH/
 KNOWN_GOOD_HASHES_PATH/IP_BLOCKLIST_PATH: the operator supplies their own

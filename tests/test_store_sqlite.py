@@ -1,5 +1,5 @@
 """SqliteRepository: a local, file-based persistence backend for the web
-UI (docs/TODO.md Phase 8) -- same Repository interface as
+UI -- same Repository interface as
 PostgresRepository, but plain TEXT columns (SQLite has no native JSONB
 type) via the stdlib sqlite3 module, no server process or extra
 dependency required. Distinct from InMemoryRepository (which doesn't

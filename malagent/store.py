@@ -1,6 +1,6 @@
 """Persistence (D9). PostgreSQL is the production backend; an in-memory double
 is used for tests / first run. SqliteRepository is a local, file-based
-backend for the web UI (docs/TODO.md Phase 8) -- no server process
+backend for the web UI -- no server process
 required, but data survives across requests/process restarts unlike
 InMemoryRepository. Same Repository interface across all three."""
 from __future__ import annotations

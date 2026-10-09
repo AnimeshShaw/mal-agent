@@ -1,4 +1,4 @@
-"""Mach-O header identification (docs/TODO.md Phase 2). Deliberately
+"""Mach-O header identification. Deliberately
 narrower than ElfTool (malagent/elf_tool.py): no segment/section entropy
 or import-table heuristics here, because there is no real Mach-O binary
 available in this development environment to live-verify them against --

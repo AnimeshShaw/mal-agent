@@ -1,4 +1,4 @@
-"""ELF format-specific triage (docs/TODO.md Phase 2): ELF/Mach-O samples
+"""ELF format-specific triage: ELF/Mach-O samples
 previously only got generic string/entropy findings from
 StaticFeaturesTool -- no structural parsing at all, unlike PE's
 PEHeaderTool. Uses pyelftools (already a transitive dependency here;

@@ -48,7 +48,7 @@ def main(argv: list[str]) -> int:
         from .providers import make_provider
         p = argparse.ArgumentParser(prog="mal-agent research judge-run")
         p.add_argument("--bundles", default="bundles/v2")
-        p.add_argument("--model", required=True, help="e.g. ollama:qwen3:8b, anthropic:claude-opus-5-5")
+        p.add_argument("--model", required=True, help="e.g. ollama:qwen3:8b, anthropic:claude-sonnet-4-6")
         p.add_argument("--exp", required=True, choices=["main", "adversarial", "reliability"])
         p.add_argument("--split", default="test", help="dev | test | all")
         p.add_argument("--limit", type=int, default=None)

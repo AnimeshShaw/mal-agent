@@ -3,8 +3,8 @@
 Unlike malagent.models (the production narrative path, text-only), this
 layer exposes what an experiment needs to be reproducible and costed:
 temperature, seed, JSON mode, token counts and latency. Specs are
-'<provider>:<model>', e.g. 'ollama:gemma4:12b', 'anthropic:claude-opus-5-5',
-'openai:gpt-5.5', 'gemini:gemini-3.1-pro'. Cloud SDKs are imported lazily
+'<provider>:<model>', e.g. 'ollama:gemma4:12b', 'anthropic:claude-sonnet-4-6',
+'openai:gpt-4o', 'gemini:gemini-3.1-pro-preview'. Cloud SDKs are imported lazily
 and read their keys from the usual environment variables."""
 from __future__ import annotations
 import os

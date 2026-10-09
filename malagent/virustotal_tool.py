@@ -1,4 +1,4 @@
-"""VirusTotal hash lookup (docs/TODO.md Phase 0 D6 + Phase 2). Needs a
+"""VirusTotal hash lookup. Needs a
 real API key (VIRUSTOTAL_API_KEY) AND EgressPolicy.allow_hash_lookup=True
 -- deliberately gated behind its own explicit opt-in, not reuse of
 allow_raw_bytes_egress/allow_pseudocode_egress, since a hash lookup is a

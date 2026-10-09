@@ -776,7 +776,7 @@ def render_tool_narrative(state: AnalysisState) -> str:
 
 def build_tool_report(state: AnalysisState) -> list[dict]:
     """JSON-serializable equivalent of render_tool_narrative()'s canonical
-    per-tool accounting, for the web UI (docs/TODO.md Phase 8) to render
+    per-tool accounting, for the web UI to render
     its own ToolCard components against. Deliberately reuses the exact
     same helpers (_finding_indication, _finding_direction, TOOL_DESCRIPTIONS,
     is_known_good_match) as the text/HTML reports, so the web UI can never

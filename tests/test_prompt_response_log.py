@@ -1,4 +1,4 @@
-"""Prompt/response logging separate from the audit hash (docs/TODO.md M1).
+"""Prompt/response logging separate from the audit hash.
 Before this, ONLY a truncated SHA256 hash of the prompt was ever recorded
 (ModelCall.prompt_hash / audit log) -- the actual prompt and response text
 were never persisted anywhere, making prompt-quality iteration impossible

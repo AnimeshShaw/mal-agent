@@ -114,7 +114,7 @@ def test_multiple_packing_signals_still_count_as_one_category_not_several():
 
 
 def test_die_packer_detection_also_counts_as_packing_category():
-    """DieTool's packer/protector detection (docs/TODO.md Phase 2) is a
+    """DieTool's packer/protector detection is a
     DIFFERENT signal source but the SAME underlying phenomenon as entropy/
     overlay-based packing detection -- must join the existing 'packing'
     category, not create an independent one (else a single packed file

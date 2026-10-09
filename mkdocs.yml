@@ -39,6 +39,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Turn On More: FEATURES.md
   - CLI Reference: CLI.md
   - Architecture: ARCHITECTURE.md
   - Pipeline: PIPELINE.md

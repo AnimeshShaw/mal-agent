@@ -34,7 +34,6 @@ full = [
   "LnkParse3>=1.3",       # Windows shortcut triage (MIT)
   "sqlalchemy>=2.0",
   "psycopg2-binary>=2.9",
-  "langgraph>=0.2",
   "requests>=2.31",
   # EMBER2024's classifier package isn't on PyPI -- installed directly
   # from its source repo (see docs/ML_CLASSIFIER_PLAN.md Phase 3).

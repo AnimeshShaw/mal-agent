@@ -44,7 +44,7 @@ def test_runs_static_and_dynamic_normally_without_a_match(monkeypatch, tmp_path)
 
 
 def test_progress_cb_receives_the_same_lines_that_get_printed(monkeypatch, tmp_path, capsys):
-    """The web UI (docs/TODO.md Phase 8) streams these lines to the
+    """The web UI streams these lines to the
     browser via SSE -- progress_cb must see exactly what the CLI prints,
     and printing must be unaffected whether or not a callback is given."""
     monkeypatch.delenv("KNOWN_GOOD_HASHES_PATH", raising=False)

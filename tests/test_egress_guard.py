@@ -1,7 +1,6 @@
 """EgressGuard.allowed() had no dedicated test coverage at all before this
 file -- only indirectly exercised through ModelRouter/agent tests. Direct
-coverage here, plus the new hash_lookup artifact class (docs/TODO.md
-Phase 0, D6): a hash isn't raw bytes or pseudocode, but it's still egress
+coverage here, plus the new hash_lookup artifact class: a hash isn't raw bytes or pseudocode, but it's still egress
 and needs its own explicit opt-in flag, not silent reuse of an existing
 one (e.g. allow_pseudocode_egress=True should NOT also silently permit
 hash lookups)."""

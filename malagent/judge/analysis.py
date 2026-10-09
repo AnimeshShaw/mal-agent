@@ -314,8 +314,8 @@ def report_markdown(rep: dict) -> str:
               f"- repeats: {rl['repeat_items']} items x {rl['repeats_per_item']}; Fleiss kappa "
               f"{_fmt(rl['repeat_fleiss_kappa'])}; unanimous {_fmt(rl['repeat_unanimous_frac'], True)}",
               f"- evidence-order flip rate: {_fmt(rl['order_flip_rate'], True)}",
-              f"- ablation flip rates: " + ", ".join(f"{k} {_fmt(v, True)}"
-                                                     for k, v in rl['ablation_flip_rate'].items()),
+              "- ablation flip rates: " + ", ".join(f"{k} {_fmt(v, True)}"
+                                                    for k, v in rl['ablation_flip_rate'].items()),
               f"- calibration: ECE {_fmt(m['calibration']['ece'])}, AURC {_fmt(m['calibration']['aurc'])} "
               f"over {m['calibration']['n_committed']} committed verdicts",
               f"- cost: {json.dumps({k: (round(v, 3) if isinstance(v, float) else v) for k, v in m['cost'].items()})}"]

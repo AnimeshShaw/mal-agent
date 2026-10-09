@@ -1,6 +1,14 @@
-"""Orchestration. A LangGraph state graph when available; otherwise a linear
-runner with identical semantics. Either way agents stay pure (D8), so the
-substrate is swappable. Budget + audit are enforced here."""
+"""Orchestration: a linear runner over a fixed stage list. Agents stay pure
+(each is a plain AnalysisState -> AnalysisState function), so the runner
+itself carries no agent-specific logic. Budget + audit are enforced here.
+
+(An earlier version of this module could optionally hand off to a
+LangGraph state graph when the package was installed; that path never
+actually built or ran a graph -- both branches called the same linear
+runner -- so it was dead code pretending to be an architectural choice.
+Removed rather than fixed: nothing here needs graph-based routing, and
+the dead import pulled langgraph>=0.2 into every 'full' install for zero
+benefit.)"""
 from __future__ import annotations
 import time
 from typing import Callable, Optional
@@ -33,8 +41,7 @@ def build_pipeline(router: Optional[ModelRouter] = None) -> list[tuple[str, Call
 
 def _emit(progress_cb: Optional[Callable[[str], None]], line: str) -> None:
     """Prints as always (unchanged CLI behavior) and also invokes
-    progress_cb if one was supplied -- e.g. the web UI (docs/TODO.md
-    Phase 8) passes one that pushes the same line onto a per-run queue an
+    progress_cb if one was supplied -- e.g. the web UI passes one that pushes the same line onto a per-run queue an
     SSE endpoint streams to the browser. Deliberately stage-level, not
     per-individual-tool: triage_agent/make_static_agent's own finer-
     grained prints (per of the 13 triage tools, Ghidra/FLOSS) aren't
@@ -87,10 +94,7 @@ def run_linear(state: AnalysisState, router: Optional[ModelRouter] = None, audit
 
 def run(state: AnalysisState, router: Optional[ModelRouter] = None, audit=None,
        progress_cb: Optional[Callable[[str], None]] = None) -> AnalysisState:
-    """Try LangGraph; fall back to linear with the same agents."""
-    try:
-        from langgraph.graph import StateGraph, END  # noqa
-    except Exception:
-        return run_linear(state, router, audit, progress_cb)
-    # LangGraph available: a linear graph here (kept simple; adaptive routing later).
+    """The pipeline's single entry point. A thin wrapper around run_linear
+    so pipeline.py has one stable name to import regardless of how the
+    runner is implemented underneath."""
     return run_linear(state, router, audit, progress_cb)

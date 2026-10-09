@@ -1,4 +1,4 @@
-"""Entry point for `mal-agent web` (docs/TODO.md Phase 8). The web
+"""Entry point for `mal-agent web`. The web
 backend (web/backend/malagent_web/) is a separate, sibling package to
 this one -- not part of the malagent distribution, since it depends on
 fastapi/uvicorn (the optional "web" extra) -- so it needs its own

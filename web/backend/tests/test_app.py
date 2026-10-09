@@ -1,4 +1,4 @@
-"""FastAPI backend for mal-agent's local web UI (docs/TODO.md Phase 8).
+"""FastAPI backend for mal-agent's local web UI.
 Thin: the app imports and calls malagent.pipeline.analyze directly, no
 logic duplicated. Ghidra-backed runs can take minutes (docs/EFFICIENCY.md's
 real measured numbers), so POST /api/analyses must return immediately --
