@@ -32,6 +32,12 @@ jobs:
 
       - run: mkdocs build --strict
 
+      # Required for any non-Jekyll site on Pages, Actions-deployed or
+      # not -- without it, GitHub's serving layer can still apply
+      # Jekyll-era file-ignore conventions (dotfiles, underscore-
+      # prefixed paths) to the deployed static site.
+      - run: touch site/.nojekyll
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
