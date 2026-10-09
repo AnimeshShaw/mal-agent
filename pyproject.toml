@@ -37,10 +37,23 @@ full = [
   "requests>=2.31",
   # EMBER2024's classifier package isn't on PyPI -- installed directly
   # from its source repo (see docs/ML_CLASSIFIER_PLAN.md Phase 3).
-  # signify is pinned EXACTLY: thrember pins signify>=0.7.1 with no
-  # upper bound, so a plain pip resolve pulls the latest release, which
-  # renamed the SignedPEFile class thrember imports -- a real
-  # dependency-drift bug found live during setup (Phase 0 spike).
+  # signify is pinned EXACTLY, and KNOWINGLY left on a version with an
+  # open high-severity CVE (GHSA covering signify < 0.9.2, privilege
+  # escalation via signed_data.py/context.py): thrember's features.py
+  # (confirmed against its current upstream `main`, not just this
+  # pinned version) does `from signify.authenticode import
+  # SignedPEFile` -- a class 0.9.2's own fix renamed to AuthenticodeFile.
+  # There is no signify release that is both patched and compatible;
+  # 0.9.2 is the *first* patched release and already carries the
+  # rename. Upgrading breaks every EMBER-enabled install outright
+  # (ImportError at module load); staying pinned carries the CVE.
+  # Taking the documented risk deliberately rather than silently --
+  # EMBER is an opt-in extra (EMBER_MODEL_PATH must be explicitly set),
+  # not loaded by a default install, and the vulnerable code path is
+  # Authenticode *signature* parsing specifically, not sample execution.
+  # Re-pin to a real release the moment thrember's upstream fixes this
+  # import; tracked as an open Dependabot alert rather than dismissed,
+  # so it stays visible until that happens.
   "thrember @ git+https://github.com/FutureComputing4AI/EMBER2024.git",
   "signify==0.7.1",
 ]

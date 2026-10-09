@@ -102,6 +102,15 @@ what it adds, why it's there, and whether it's been verified live.
      `thrember` pins `signify>=0.7.1` with no upper bound, and the
      latest release renamed a class it imports (a real dependency-drift
      bug found live during setup).
+     > **Known, open security tradeoff:** `signify==0.7.1` carries a
+     > real high-severity CVE (fixed in 0.9.2), but 0.9.2 is also the
+     > release that did the rename above — there is currently no
+     > signify version that is both patched and compatible with
+     > `thrember`. This is a deliberate, documented pin, not an
+     > oversight (see `pyproject.toml`'s comment on this exact line and
+     > the open Dependabot alert, kept visible rather than dismissed).
+     > Only relevant if you enable this extra; it's not loaded by
+     > default.
   2. Download a `.model` file from
      [huggingface.co/joyce8/EMBER2024-benchmark-models](https://huggingface.co/joyce8/EMBER2024-benchmark-models)
      (~3.5MB — no need for the full 3.2M-file dataset).
