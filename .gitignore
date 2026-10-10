@@ -51,3 +51,8 @@ paper/
 research_out/
 bundles/
 bundles_build.log
+
+# Venue-selection research (deep-research skill output) -- private working
+# notes, not project content.
+/research_notes/
+/reports/
